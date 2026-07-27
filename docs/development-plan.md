@@ -59,6 +59,7 @@ healthreminder/
 | `medications` | 药物、补充剂、剂量和服用说明 |
 | `medication_schedules` | 起止日期、时区、周期类型和版本 |
 | `medication_times` | 一天内一个或多个服用时间 |
+| `medication_records` | 计划服用时间、已服用/跳过状态、实际服用时间和备注 |
 | `injection_plans` | 注射名称、剂量、部位、间隔天数、时间和左右交替起始侧 |
 | `injection_records` | 注射计划日期、完成/跳过/改期状态、实际时间和实际左右侧 |
 | `events` | 挂号、检查、复诊和其他一次性事项 |
@@ -94,6 +95,8 @@ API 统一使用 `/api/v1`。首次登录时输入 `ADMIN_API_TOKEN`，Worker �
 
 ```text
 GET/POST/PUT/DELETE  /api/v1/medications
+GET/POST             /api/v1/medications/:id/records
+DELETE               /api/v1/medications/:id/records/:recordId
 GET/POST/PUT/DELETE  /api/v1/injections
 GET/POST             /api/v1/injections/:id/records
 DELETE               /api/v1/injections/:id/records/:recordId
@@ -141,7 +144,7 @@ GET                  /api/v1/system/status
 - 新周期规则通过新的任务生成器实现。
 - FCM、邮件等渠道通过 `NotificationChannel` 适配器实现。
 - 多个家庭成员使用现有 `profiles` 关系扩展。
-- 服药确认和未确认升级通过扩展任务状态实现。
+- 未服药升级提醒可基于 `medication_records` 的缺失记录扩展，不与 Bark 投递状态混用。
 - 检查报告等附件存入 R2，不直接存入 D1。
 - 未来如需原生客户端，可继续复用 `/api/v1`，无需修改调度器。
 - 后续增加加密备份存储、自动异地归档和更细粒度的审计查询。

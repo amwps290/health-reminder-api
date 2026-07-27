@@ -28,6 +28,21 @@ export interface MedicationInput {
   enabled: boolean;
 }
 
+export type MedicationRecordStatus = "taken" | "skipped";
+
+export interface MedicationRecord {
+  id: string;
+  medicationId: string;
+  scheduleId: string;
+  jobId: string | null;
+  scheduledAt: string;
+  status: MedicationRecordStatus;
+  takenAt: string | null;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type InjectionSide = "left" | "right";
 
 export interface Injection {
@@ -115,6 +130,7 @@ export interface TimelineJob {
   id: string;
   source_type: "medication" | "event" | "injection";
   source_id: string;
+  owner_id: string | null;
   scheduled_at: string;
   title: string;
   body: string;
@@ -123,6 +139,9 @@ export interface TimelineJob {
   attempts: number;
   sent_at: string | null;
   last_error: string | null;
+  record_id: string | null;
+  adherence_status: MedicationRecordStatus | null;
+  taken_at: string | null;
 }
 
 export interface SystemStatus {

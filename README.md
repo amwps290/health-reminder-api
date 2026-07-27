@@ -2,7 +2,7 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/amwps290/healthreminder)
 
-个人健康提醒工具。支持服药、间隔注射、注射部位左右交替、孕周校准与孕期体重增长曲线。Cloudflare Worker + D1 负责数据和调度，通过自建 Bark 服务向 iPhone 单向推送，并由同一个 Worker 提供响应式 Web 管理端。
+个人健康提醒工具。支持服药计划与实际服用记录、间隔注射、按真实完成记录交替注射部位、孕周校准与孕期体重增长曲线。Cloudflare Worker + D1 负责数据和调度，通过自建 Bark 服务向 iPhone 单向推送，并由同一个 Worker 提供响应式 Web 管理端。
 
 详细方案见 [docs/development-plan.md](docs/development-plan.md)。
 

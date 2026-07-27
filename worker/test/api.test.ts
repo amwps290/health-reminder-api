@@ -10,7 +10,7 @@ const headers = {
 };
 
 describe("health reminder API", () => {
-  it("creates, lists and updates a medication with materialized jobs", async () => {
+  it("creates, updates and records medication adherence with materialized jobs", async () => {
     const tomorrow = addLocalDays(dateInTimeZone(new Date(), "Asia/Shanghai"), 1);
     const created = await request("/api/v1/medications", {
       method: "POST",
@@ -25,7 +25,7 @@ describe("health reminder API", () => {
       }),
     });
     expect(created.status).toBe(201);
-    const medication = (await created.json() as { data: { id: string; schedule: { version: number } } }).data;
+    const medication = (await created.json() as { data: { id: string; schedule: { id: string; version: number } } }).data;
     expect(medication.schedule.version).toBe(1);
 
     const jobs = await env.DB
@@ -57,6 +57,71 @@ describe("health reminder API", () => {
       .all<{ status: string; count: number }>();
     expect(statuses.results.find((row) => row.status === "canceled")?.count).toBe(6);
     expect(statuses.results.find((row) => row.status === "pending")?.count).toBe(3);
+
+    const pendingJob = await env.DB
+      .prepare(
+        `SELECT id, scheduled_at FROM notification_jobs
+         WHERE source_type = 'medication' AND source_id = ? AND status = 'pending'
+         ORDER BY scheduled_at LIMIT 1`,
+      )
+      .bind(medication.schedule.id)
+      .first<{ id: string; scheduled_at: string }>();
+    expect(pendingJob).not.toBeNull();
+    const takenAt = new Date().toISOString();
+    const recorded = await request(`/api/v1/medications/${medication.id}/records`, {
+      method: "POST",
+      body: JSON.stringify({
+        scheduledAt: pendingJob!.scheduled_at,
+        status: "taken",
+        takenAt,
+        notes: "按计划服用",
+      }),
+    });
+    expect(recorded.status).toBe(201);
+    expect(await recorded.json()).toMatchObject({
+      data: {
+        medicationId: medication.id,
+        scheduleId: medication.schedule.id,
+        jobId: pendingJob!.id,
+        scheduledAt: pendingJob!.scheduled_at,
+        status: "taken",
+        takenAt,
+        notes: "按计划服用",
+      },
+    });
+
+    const records = await request(`/api/v1/medications/${medication.id}/records`);
+    expect(records.status).toBe(200);
+    expect((await records.json() as { data: unknown[] }).data).toHaveLength(1);
+
+    const timeline = await request(
+      `/api/v1/timeline?from=${encodeURIComponent(pendingJob!.scheduled_at)}&to=${encodeURIComponent(pendingJob!.scheduled_at)}`,
+    );
+    expect(await timeline.json()).toMatchObject({
+      data: [{
+        id: pendingJob!.id,
+        owner_id: medication.id,
+        adherence_status: "taken",
+        taken_at: takenAt,
+      }],
+    });
+
+    const skipped = await request(`/api/v1/medications/${medication.id}/records`, {
+      method: "POST",
+      body: JSON.stringify({
+        scheduledAt: pendingJob!.scheduled_at,
+        status: "skipped",
+        takenAt: null,
+        notes: "当天跳过",
+      }),
+    });
+    expect(skipped.status).toBe(201);
+    expect(await skipped.json()).toMatchObject({ data: { status: "skipped", takenAt: null } });
+    const recordCount = await env.DB
+      .prepare("SELECT COUNT(*) AS count FROM medication_records WHERE schedule_id = ?")
+      .bind(medication.schedule.id)
+      .first<{ count: number }>();
+    expect(recordCount?.count).toBe(1);
   });
 
   it("creates an event, note and linked question", async () => {

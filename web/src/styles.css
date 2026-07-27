@@ -132,6 +132,7 @@ a { color: inherit; }
 .section-heading span { color: var(--muted); font-size: 12px; }
 .task-list, .delivery-list { display: flex; flex-direction: column; }
 .task-row { display: grid; grid-template-columns: 38px minmax(0, 1fr) 58px 68px; align-items: center; gap: 12px; min-height: 72px; padding: 12px 18px; border-bottom: 1px solid #e8edeb; }
+.task-row.has-record-actions { grid-template-columns: 38px minmax(0, 1fr) 58px 68px 92px; }
 .task-row:last-child { border-bottom: 0; }
 .task-icon, .item-icon { display: grid; place-items: center; border-radius: 8px; }
 .task-icon { width: 36px; height: 36px; }
@@ -142,6 +143,12 @@ a { color: inherit; }
 .task-main strong { display: block; margin-bottom: 3px; font-size: 14px; }
 .task-main p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; white-space: pre-line; overflow-wrap: anywhere; }
 .task-row time { color: #43534f; font-variant-numeric: tabular-nums; font-size: 13px; }
+.task-record-actions { display: grid; grid-template-columns: repeat(2, 44px); padding: 2px; background: #edf1f0; border-radius: 7px; }
+.task-record-actions button { display: grid; width: 44px; height: 44px; place-items: center; padding: 0; color: #60706b; background: transparent; border: 0; border-radius: 5px; }
+.task-record-actions button:hover { color: #263a34; background: #fff; }
+.task-record-actions button.active.taken { color: #176450; background: #d8eee7; }
+.task-record-actions button.active.skipped { color: #8a5a0a; background: #ffedc9; }
+.task-record-actions button:focus-visible { outline: 2px solid #25836d; outline-offset: 1px; }
 
 .status-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 58px; min-height: 24px; padding: 2px 7px; border-radius: 999px; font-size: 11px; font-weight: 650; white-space: nowrap; }
 .status-pending, .status-open { color: #7b520f; background: #fff0d4; }
@@ -219,13 +226,13 @@ a { color: inherit; }
 .form-grid.align-end { align-items: end; }
 .rotation-preview { display: flex; align-items: center; gap: 9px; min-height: 42px; padding: 10px 12px; color: #4e5f5a; background: #f3f7f5; border: 1px solid #dce7e3; border-radius: 6px; font-size: 13px; }
 .rotation-preview svg { flex: 0 0 auto; color: #9a5b0b; }
-.injection-history { margin: 22px -20px -20px; border-top: 1px solid var(--border); }
-.injection-history-list { display: flex; flex-direction: column; }
-.injection-history-row { display: flex; min-height: 64px; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px 10px 20px; border-bottom: 1px solid #e7ecea; }
-.injection-history-row:last-child { border-bottom: 0; }
-.injection-history-row > div:first-child { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
-.injection-history-row strong { color: #2a3d37; font-size: 13px; overflow-wrap: anywhere; }
-.injection-history-row span { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.injection-history, .medication-history { margin: 22px -20px -20px; border-top: 1px solid var(--border); }
+.injection-history-list, .medication-history-list { display: flex; flex-direction: column; }
+.injection-history-row, .medication-history-row { display: flex; min-height: 64px; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px 10px 20px; border-bottom: 1px solid #e7ecea; }
+.injection-history-row:last-child, .medication-history-row:last-child { border-bottom: 0; }
+.injection-history-row > div:first-child, .medication-history-row > div:first-child { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.injection-history-row strong, .medication-history-row strong { color: #2a3d37; font-size: 13px; overflow-wrap: anywhere; }
+.injection-history-row span, .medication-history-row span { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .notification-test-feedback { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 9px; padding: 11px 12px; color: #275448; background: #e8f4f0; border: 1px solid #c9e3da; border-radius: 6px; }
 .notification-test-feedback > svg { margin-top: 1px; color: #1f755f; }
 .notification-test-feedback strong, .notification-test-feedback span { display: block; }
@@ -357,7 +364,9 @@ a { color: inherit; }
   .metric strong { font-size: 17px; }
   .metric span { margin-top: 1px; font-size: 10px; }
   .task-row { grid-template-columns: 34px minmax(0, 1fr) 54px; gap: 9px; padding: 11px 13px; }
+  .task-row.has-record-actions { grid-template-columns: 34px minmax(0, 1fr) 54px; }
   .task-row .status-badge { grid-column: 2 / 4; justify-self: start; }
+  .task-record-actions { grid-column: 2 / 4; justify-self: start; }
   .task-icon { width: 32px; height: 32px; }
   .item-card { padding: 15px; }
   .event-time { font-size: 17px; }

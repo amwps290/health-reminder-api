@@ -4,7 +4,7 @@ import type { AppContext } from "../core/types";
 import { getConfig } from "../core/types";
 
 const BACKUP_FORMAT = "health-reminder-backup";
-const BACKUP_VERSION = 2;
+const BACKUP_VERSION = 3;
 const MAX_BACKUP_BYTES = 5_000_000;
 
 type DatabaseValue = string | number | null;
@@ -44,6 +44,7 @@ const TABLES: readonly TableDefinition[] = [
   table("pregnancySettings", "pregnancy_settings", ["profile_id", "calibrated_on", "gestational_days", "created_at", "updated_at"], "profile_id"),
   table("weightRecords", "weight_records", ["id", "profile_id", "measured_on", "weight_kg", "note", "created_at", "updated_at"], "id"),
   table("notificationJobs", "notification_jobs", ["id", "profile_id", "target_id", "source_type", "source_id", "source_version", "dedupe_key", "scheduled_at", "title", "body", "group_name", "urgency", "status", "attempts", "next_attempt_at", "claim_token", "claimed_at", "sent_at", "last_error", "created_at", "updated_at"], "id"),
+  { ...table("medicationRecords", "medication_records", ["id", "medication_id", "schedule_id", "job_id", "scheduled_at", "status", "taken_at", "notes", "created_at", "updated_at"], "id"), optionalForVersions: [1, 2] },
   table("notificationDeliveries", "notification_deliveries", ["id", "job_id", "attempted_at", "success", "http_status", "provider_code", "error_code", "created_at"], "id"),
   { ...table("schedulerDailyStats", "scheduler_daily_stats", ["day", "run_count", "success_count", "failed_count", "materialized_count", "claimed_count", "sent_count", "delivery_failed_count", "created_at", "updated_at"], "day"), optionalForVersions: [1] },
 ];
@@ -119,7 +120,7 @@ async function readBackupData(database: D1Database): Promise<BackupData> {
 async function validateBackup(database: D1Database, document: BackupDocument) {
   const errors: string[] = [];
   if (document.format !== BACKUP_FORMAT) errors.push("不是健康提醒备份文件");
-  if (![1, BACKUP_VERSION].includes(document.version)) errors.push(`不支持备份版本 ${document.version}`);
+  if (![1, 2, BACKUP_VERSION].includes(document.version)) errors.push(`不支持备份版本 ${document.version}`);
   if (!Number.isFinite(Date.parse(document.exportedAt))) errors.push("导出时间无效");
 
   for (const definition of TABLES) {
@@ -196,6 +197,8 @@ function validateReferences(data: BackupData, errors: string[]): void {
   checkReferences(data.medications, "profile_id", profiles, "medications", errors);
   checkReferences(data.medicationSchedules, "medication_id", medications, "medicationSchedules", errors);
   checkReferences(data.medicationTimes, "schedule_id", schedules, "medicationTimes", errors);
+  checkReferences(data.medicationRecords, "medication_id", medications, "medicationRecords", errors);
+  checkReferences(data.medicationRecords, "schedule_id", schedules, "medicationRecords", errors);
   checkReferences(data.injectionPlans, "profile_id", profiles, "injectionPlans", errors);
   checkReferences(data.injectionRecords, "plan_id", plans, "injectionRecords", errors);
   checkReferences(data.events, "profile_id", profiles, "events", errors);
@@ -208,6 +211,7 @@ function validateReferences(data: BackupData, errors: string[]): void {
   checkReferences(data.notificationJobs, "profile_id", profiles, "notificationJobs", errors);
   checkReferences(data.notificationJobs, "target_id", targets, "notificationJobs", errors);
   checkReferences(data.notificationDeliveries, "job_id", jobs, "notificationDeliveries", errors);
+  checkReferences(data.medicationRecords, "job_id", jobs, "medicationRecords", errors, true);
 }
 
 function checkReferences(

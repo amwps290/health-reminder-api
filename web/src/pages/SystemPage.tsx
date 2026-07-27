@@ -199,6 +199,7 @@ const backupTableLabels: Record<string, string> = {
   medications: "服药",
   medicationSchedules: "服药日程",
   medicationTimes: "服药时间",
+  medicationRecords: "服药记录",
   injectionPlans: "注射计划",
   injectionRecords: "注射记录",
   events: "就诊事项",

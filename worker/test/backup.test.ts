@@ -44,9 +44,10 @@ describe("backup export", () => {
     };
     expect(backup).toMatchObject({
       format: "health-reminder-backup",
-      version: 2,
+      version: 3,
       excluded: ["scheduler_runs", "maintenance_state", "worker_secrets"],
     });
+    expect(backup.recordCounts.medicationRecords).toBe(0);
     expect(backup.recordCounts.medicalNotes).toBe(1);
     expect(backup.data.profiles).toContainEqual(expect.objectContaining({ id: DEFAULT_PROFILE_ID }));
     expect(backup.data.medicalNotes).toContainEqual({
@@ -70,6 +71,28 @@ describe("backup export", () => {
     expect(csv).toContain('"profiles"');
     expect(csv).toContain('"notificationTargets"');
     expect(csv).not.toContain("test-device-key");
+  });
+
+  it("accepts version 2 backups without medication records", async () => {
+    const exported = await request("/api/v1/backup/export");
+    const backup = await exported.json() as {
+      version: number;
+      recordCounts: Record<string, number>;
+      data: Record<string, unknown>;
+    };
+    backup.version = 2;
+    delete backup.recordCounts.medicationRecords;
+    delete backup.data.medicationRecords;
+
+    const response = await request("/api/v1/backup/validate", {
+      method: "POST",
+      body: JSON.stringify(backup),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      data: { valid: true, version: 2, incoming: { medicationRecords: 0 } },
+    });
   });
 
   it("validates and restores a JSON backup after preview", async () => {

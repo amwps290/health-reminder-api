@@ -43,11 +43,19 @@ test("creates and removes a medication plan", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: "30" }).click();
   await page.getByRole("button", { name: "完成" }).click();
   await page.getByRole("button", { name: "保存" }).click();
-  await expect(page.getByRole("heading", { name })).toBeVisible();
+  const card = page.getByRole("article").filter({ hasText: name });
+  await expect(card.getByRole("heading", { name })).toBeVisible();
+
+  await card.getByRole("button", { name: "服用记录" }).click();
+  const recordDialog = page.getByRole("dialog", { name: `${name} · 服用记录` });
+  await recordDialog.getByRole("button", { name: "保存记录" }).click();
+  await expect(recordDialog).toContainText("服用记录已保存");
+  await expect(recordDialog).toContainText("已服用");
+  await recordDialog.locator("form").getByRole("button", { name: "关闭", exact: true }).click();
   await page.screenshot({ path: `../test-results/${testInfo.project.name}-medications.png`, fullPage: true });
 
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("article").filter({ hasText: name }).getByRole("button", { name: "删除" }).click();
+  await card.getByRole("button", { name: "删除" }).click();
   await expect(page.getByRole("heading", { name })).toHaveCount(0);
 });
 

@@ -166,11 +166,17 @@ systemRoutes.get("/timeline", async (context) => {
 
   const { results } = await context.env.DB
     .prepare(
-      `SELECT id, source_type, source_id, scheduled_at, title, body, group_name,
-              status, attempts, sent_at, last_error
-       FROM notification_jobs
-       WHERE scheduled_at BETWEEN ? AND ?
-       ORDER BY scheduled_at
+      `SELECT j.id, j.source_type, j.source_id, j.scheduled_at, j.title, j.body,
+              j.group_name, j.status, j.attempts, j.sent_at, j.last_error,
+              CASE WHEN j.source_type = 'medication' THEN s.medication_id ELSE NULL END AS owner_id,
+              r.id AS record_id, r.status AS adherence_status, r.taken_at
+       FROM notification_jobs j
+       LEFT JOIN medication_schedules s
+         ON j.source_type = 'medication' AND s.id = j.source_id
+       LEFT JOIN medication_records r
+         ON r.schedule_id = j.source_id AND r.scheduled_at = j.scheduled_at
+       WHERE j.scheduled_at BETWEEN ? AND ?
+       ORDER BY j.scheduled_at
        LIMIT 500`,
     )
     .bind(from, to)

@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Baby, BellRing, CheckCircle2, Clock3, Pencil, RefreshCw, RotateCcw, Send, Syringe, TriangleAlert } from "lucide-react";
+import { Baby, BellRing, Check, CheckCircle2, Clock3, Pencil, RefreshCw, RotateCcw, Send, SkipForward, Syringe, TriangleAlert } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { api, jsonBody } from "../api";
 import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState, ErrorNotice, LoadingView } from "../components/StateViews";
 import { StatusBadge } from "../components/StatusBadge";
-import type { PregnancyStatus, SystemStatus, TimelineJob } from "../types";
+import type { MedicationRecord, MedicationRecordStatus, PregnancyStatus, SystemStatus, TimelineJob } from "../types";
 import { addDateDays, BUSINESS_TIME_ZONE, formatDateTime, fromDateTimeInput, todayInBusinessTimeZone } from "../utils";
 
 export function DashboardPage() {
@@ -33,6 +33,24 @@ export function DashboardPage() {
     }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["system-status"] }),
   });
+  const recordMedication = useMutation({
+    mutationFn: ({ job, recordStatus }: { job: TimelineJob; recordStatus: MedicationRecordStatus }) =>
+      api<MedicationRecord>(`/medications/${job.owner_id}/records`, {
+        method: "POST",
+        ...jsonBody({
+          scheduledAt: job.scheduled_at,
+          status: recordStatus,
+          takenAt: recordStatus === "taken" ? new Date().toISOString() : null,
+          notes: "",
+        }),
+      }),
+    onSuccess: async (_, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["timeline"] }),
+        queryClient.invalidateQueries({ queryKey: ["medication-records", variables.job.owner_id] }),
+      ]);
+    },
+  });
 
   return (
     <div className="page-container">
@@ -48,6 +66,7 @@ export function DashboardPage() {
 
       {testPush.isSuccess && <div className="success-notice"><CheckCircle2 size={18} />测试通知已被 Bark 接受</div>}
       {testPush.isError && <ErrorNotice message={testPush.error.message} />}
+      {recordMedication.isError && <ErrorNotice message={recordMedication.error.message} />}
       {status.isError && <ErrorNotice message={status.error.message} />}
 
       {pregnancy.isError && <ErrorNotice message={pregnancy.error.message} />}
@@ -70,13 +89,35 @@ export function DashboardPage() {
         {timeline.data?.length === 0 && <EmptyState title="今天没有提醒" />}
         <div className="task-list">
           {timeline.data?.map((job) => (
-            <article className="task-row" key={job.id}>
+            <article className={`task-row ${job.source_type === "medication" ? "has-record-actions" : ""}`} key={job.id}>
               <div className={`task-icon ${job.source_type}`}>
                 {job.source_type === "medication" ? <BellRing size={19} /> : job.source_type === "injection" ? <Syringe size={19} /> : <Clock3 size={19} />}
               </div>
               <div className="task-main"><strong>{job.title}</strong><p>{job.body}</p></div>
               <time>{formatDateTime(job.scheduled_at).slice(-5)}</time>
               <StatusBadge status={job.status} />
+              {job.source_type === "medication" && job.owner_id && (
+                <div className="task-record-actions" role="group" aria-label={`${job.title}服用结果`}>
+                  <button
+                    type="button"
+                    className={job.adherence_status === "taken" ? "active taken" : ""}
+                    aria-label="标记为已服用"
+                    title="已服用"
+                    aria-pressed={job.adherence_status === "taken"}
+                    disabled={recordMedication.isPending && recordMedication.variables?.job.id === job.id}
+                    onClick={() => recordMedication.mutate({ job, recordStatus: "taken" })}
+                  ><Check size={17} /></button>
+                  <button
+                    type="button"
+                    className={job.adherence_status === "skipped" ? "active skipped" : ""}
+                    aria-label="标记为已跳过"
+                    title="已跳过"
+                    aria-pressed={job.adherence_status === "skipped"}
+                    disabled={recordMedication.isPending && recordMedication.variables?.job.id === job.id}
+                    onClick={() => recordMedication.mutate({ job, recordStatus: "skipped" })}
+                  ><SkipForward size={17} /></button>
+                </div>
+              )}
             </article>
           ))}
         </div>

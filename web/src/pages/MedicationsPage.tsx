@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarRange, Clock3, Pencil, Pill, Plus, Send, Trash2 } from "lucide-react";
+import { CalendarRange, CheckCircle2, Clock3, History, Pencil, Pill, Plus, Send, SkipForward, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { api, jsonBody } from "../api";
 import { Modal } from "../components/Modal";
@@ -7,11 +7,12 @@ import { NotificationTestFeedback } from "../components/NotificationTestFeedback
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState, ErrorNotice, LoadingView } from "../components/StateViews";
 import { TimeDialInput } from "../components/TimeDialInput";
-import type { Medication, MedicationInput, NotificationTestResult } from "../types";
-import { todayInBusinessTimeZone } from "../utils";
+import type { Medication, MedicationInput, MedicationRecord, MedicationRecordStatus, NotificationTestResult } from "../types";
+import { formatDateTime, fromDateTimeInput, todayInBusinessTimeZone, toDateTimeInput } from "../utils";
 
 export function MedicationsPage() {
   const [editing, setEditing] = useState<Medication | null | "new">(null);
+  const [recording, setRecording] = useState<Medication | null>(null);
   const queryClient = useQueryClient();
   const medications = useQuery({ queryKey: ["medications"], queryFn: () => api<Medication[]>("/medications") });
   const remove = useMutation({
@@ -41,6 +42,7 @@ export function MedicationsPage() {
             </div>
             {item.instructions && <p className="item-note">{item.instructions}</p>}
             <div className="item-actions">
+              <button className="text-button" onClick={() => setRecording(item)}><History size={16} />服用记录</button>
               <button className="text-button" onClick={() => setEditing(item)}><Pencil size={16} />编辑</button>
               <button className="danger-text-button" onClick={() => window.confirm(`删除“${item.name}”？`) && remove.mutate(item.id)}><Trash2 size={16} />删除</button>
             </div>
@@ -48,6 +50,7 @@ export function MedicationsPage() {
         ))}
       </div>
       {editing && <MedicationModal medication={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}
+      {recording && <MedicationRecordsModal medication={recording} onClose={() => setRecording(null)} />}
     </div>
   );
 }
@@ -137,6 +140,118 @@ function MedicationModal({ medication, onClose }: { medication: Medication | nul
       </form>
     </Modal>
   );
+}
+
+interface MedicationRecordForm {
+  scheduledAt: string;
+  status: MedicationRecordStatus;
+  takenAt: string;
+  notes: string;
+}
+
+function MedicationRecordsModal({ medication, onClose }: { medication: Medication; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const records = useQuery({
+    queryKey: ["medication-records", medication.id],
+    queryFn: () => api<MedicationRecord[]>(`/medications/${medication.id}/records`),
+  });
+  const [form, setForm] = useState<MedicationRecordForm>(() => emptyMedicationRecordForm(medication));
+  const save = useMutation({
+    mutationFn: () => api<MedicationRecord>(`/medications/${medication.id}/records`, {
+      method: "POST",
+      ...jsonBody({
+        scheduledAt: fromDateTimeInput(form.scheduledAt),
+        status: form.status,
+        takenAt: form.status === "taken" ? fromDateTimeInput(form.takenAt) : null,
+        notes: form.notes,
+      }),
+    }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["medication-records", medication.id] }),
+        queryClient.invalidateQueries({ queryKey: ["timeline"] }),
+      ]);
+      setForm(emptyMedicationRecordForm(medication));
+    },
+  });
+  const remove = useMutation({
+    mutationFn: (recordId: string) => api(`/medications/${medication.id}/records/${recordId}`, { method: "DELETE" }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["medication-records", medication.id] }),
+        queryClient.invalidateQueries({ queryKey: ["timeline"] }),
+      ]);
+    },
+  });
+
+  function editRecord(record: MedicationRecord): void {
+    setForm({
+      scheduledAt: toDateTimeInput(record.scheduledAt),
+      status: record.status,
+      takenAt: record.takenAt ? toDateTimeInput(record.takenAt) : toDateTimeInput(new Date().toISOString()),
+      notes: record.notes,
+    });
+  }
+
+  return (
+    <Modal title={`${medication.name} · 服用记录`} onClose={onClose}>
+      <form className="form-stack" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
+        {save.isError && <ErrorNotice message={save.error.message} />}
+        {remove.isError && <ErrorNotice message={remove.error.message} />}
+        {save.isSuccess && <div className="success-notice" role="status"><CheckCircle2 size={18} />服用记录已保存</div>}
+        <div className="field-group">
+          <span>服用结果</span>
+          <div className="segmented-control side-control" role="group" aria-label="服用结果">
+            <button type="button" className={form.status === "taken" ? "active" : ""} aria-pressed={form.status === "taken"} onClick={() => setForm({ ...form, status: "taken" })}><CheckCircle2 size={16} />已服用</button>
+            <button type="button" className={form.status === "skipped" ? "active" : ""} aria-pressed={form.status === "skipped"} onClick={() => setForm({ ...form, status: "skipped" })}><SkipForward size={16} />已跳过</button>
+          </div>
+        </div>
+        <div className="form-grid two-columns">
+          <Field label="计划服用时间"><input type="datetime-local" value={form.scheduledAt} onChange={(event) => setForm({ ...form, scheduledAt: event.target.value })} required /></Field>
+          {form.status === "taken" ? (
+            <Field label="实际服用时间"><input type="datetime-local" value={form.takenAt} onChange={(event) => setForm({ ...form, takenAt: event.target.value })} required /></Field>
+          ) : <div />}
+        </div>
+        <Field label="备注"><textarea rows={2} maxLength={1000} value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="可记录漏服原因或其他情况" /></Field>
+        <div className="form-actions">
+          <button type="button" className="secondary-button" onClick={onClose}>关闭</button>
+          <button type="submit" className="primary-button" disabled={save.isPending}>{save.isPending ? "保存中" : "保存记录"}</button>
+        </div>
+      </form>
+
+      <section className="medication-history" aria-labelledby="medication-history-title">
+        <div className="section-heading"><h2 id="medication-history-title">最近记录</h2><span>{records.data?.length ?? 0} 条</span></div>
+        {records.isPending && <LoadingView />}
+        {records.isError && <ErrorNotice message={records.error.message} />}
+        {records.data?.length === 0 && <EmptyState title="还没有服用记录" />}
+        <div className="medication-history-list">
+          {records.data?.map((record) => (
+            <div className="medication-history-row" key={record.id}>
+              <div>
+                <strong>{formatDateTime(record.scheduledAt)} · {record.status === "taken" ? "已服用" : "已跳过"}</strong>
+                <span>{record.takenAt ? `实际服用 ${formatDateTime(record.takenAt)}${record.notes ? ` · ${record.notes}` : ""}` : record.notes || "未填写备注"}</span>
+              </div>
+              <div className="compact-actions">
+                <button type="button" className="icon-button" aria-label={`编辑 ${formatDateTime(record.scheduledAt)} 服用记录`} onClick={() => editRecord(record)}><Pencil size={16} /></button>
+                <button type="button" className="icon-button danger" aria-label={`删除 ${formatDateTime(record.scheduledAt)} 服用记录`} onClick={() => window.confirm("删除这条服用记录？") && remove.mutate(record.id)}><Trash2 size={16} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </Modal>
+  );
+}
+
+function emptyMedicationRecordForm(medication: Medication): MedicationRecordForm {
+  const now = toDateTimeInput(new Date().toISOString());
+  const today = now.slice(0, 10);
+  const currentTime = now.slice(11);
+  const plannedTime = [...medication.schedule.times]
+    .sort()
+    .filter((time) => time <= currentTime)
+    .at(-1) || [...medication.schedule.times].sort()[0] || currentTime;
+  return { scheduledAt: `${today}T${plannedTime}`, status: "taken", takenAt: now, notes: "" };
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="field-group"><span>{label}</span>{children}</label>; }
