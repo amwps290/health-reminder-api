@@ -16,7 +16,7 @@
 | Build command | `corepack pnpm run build` |
 | Deploy command | `corepack pnpm run deploy` |
 
-根目录的 `deploy` 脚本会先对 `DB` 绑定执行尚未应用的 D1 migrations，再部署 Worker 和 Web 静态资产。已执行的迁移不会重复运行。
+根目录的 `deploy` 脚本会按名称查找 `health-reminder` D1 数据库；首次部署时如果数据库不存在，会先创建数据库。脚本随后生成一个包含真实数据库 ID 的临时 Wrangler 配置，对 `DB` 绑定执行尚未应用的 D1 migrations，再部署 Worker 和 Web 静态资产。已执行的迁移不会重复运行，临时配置不会提交到 Git。
 
 ## Cloudflare 资源
 
@@ -24,7 +24,7 @@
 
 | 类型 | 变量名 | 资源 |
 | --- | --- | --- |
-| D1 database | `DB` | 现有的 `health-reminder` 数据库 |
+| D1 database | `DB` | `health-reminder` 数据库，由首次部署自动创建或复用同名数据库 |
 
 在 `Settings` -> `Variables and Secrets` 中配置：
 
@@ -61,3 +61,11 @@ corepack pnpm run verify
 
 该命令严格使用两个 `pnpm-lock.yaml` 安装依赖，并依次运行 Worker/Web 类型检查、Worker 测试、
 Web 生产构建和桌面/移动 E2E。E2E 启动 Wrangler 前会自动重建 `web/dist`。
+
+只检查部署配置生成逻辑、不访问 Cloudflare：
+
+```powershell
+corepack pnpm run deploy:check
+```
+
+如果部署日志出现 D1 错误代码 `7404`，检查是否仍在直接使用 `worker/wrangler.jsonc` 中的全零占位 ID。生产部署必须从根目录执行 `npm run deploy` 或 `corepack pnpm run deploy`，由部署脚本解析真实数据库 ID；不要直接对占位配置运行 `wrangler deploy`。
