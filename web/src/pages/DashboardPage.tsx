@@ -16,6 +16,7 @@ export function DashboardPage() {
   const status = useQuery({
     queryKey: ["system-status"],
     queryFn: () => api<SystemStatus>("/system/status"),
+    refetchInterval: 60_000,
   });
   const pregnancy = useQuery({
     queryKey: ["pregnancy"],
@@ -47,6 +48,7 @@ export function DashboardPage() {
 
       {testPush.isSuccess && <div className="success-notice"><CheckCircle2 size={18} />测试通知已被 Bark 接受</div>}
       {testPush.isError && <ErrorNotice message={testPush.error.message} />}
+      {status.isError && <ErrorNotice message={status.error.message} />}
 
       {pregnancy.isError && <ErrorNotice message={pregnancy.error.message} />}
       <PregnancyCard
@@ -56,9 +58,9 @@ export function DashboardPage() {
       />
 
       <section className="metrics-band" aria-label="任务概况">
-        <Metric icon={Clock3} label="待发送" value={status.data?.jobs.pending ?? 0} tone="green" />
-        <Metric icon={RefreshCw} label="重试中" value={status.data?.jobs.retrying ?? 0} tone="amber" />
-        <Metric icon={TriangleAlert} label="失败" value={status.data?.jobs.failed ?? 0} tone="red" />
+        <Metric icon={Clock3} label="计划任务" value={status.data?.jobs.pending ?? "--"} tone="green" />
+        <Metric icon={RefreshCw} label="重试中" value={status.data?.jobs.retrying ?? "--"} tone="amber" />
+        <Metric icon={TriangleAlert} label="失败" value={status.data?.jobs.failed ?? "--"} tone="red" />
       </section>
 
       <section className="content-section">
@@ -187,7 +189,7 @@ function PregnancyModal({ pregnancy, onClose }: { pregnancy?: PregnancyStatus; o
   );
 }
 
-function Metric({ icon: Icon, label, value, tone }: { icon: typeof Clock3; label: string; value: number; tone: string }) {
+function Metric({ icon: Icon, label, value, tone }: { icon: typeof Clock3; label: string; value: ReactNode; tone: string }) {
   return <div className={`metric metric-${tone}`}><Icon size={20} /><div><strong>{value}</strong><span>{label}</span></div></div>;
 }
 

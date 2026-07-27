@@ -33,7 +33,10 @@ a { color: inherit; }
 .nav-link { display: flex; align-items: center; gap: 11px; min-height: 42px; padding: 0 12px; border: 0; border-radius: 6px; color: #c9d9d4; background: transparent; text-decoration: none; font-size: 14px; }
 .nav-link:hover { color: #fff; background: #224b43; }
 .nav-link.active { color: #fff; background: #2a5b51; font-weight: 600; }
-.sidebar-status { display: flex; align-items: center; gap: 9px; margin-top: auto; padding: 13px 12px; color: #acd3c7; font-size: 12px; border-top: 1px solid #31554e; }
+.sidebar-status { display: flex; align-items: center; gap: 9px; margin-top: auto; padding: 13px 12px; color: #acd3c7; font-size: 12px; border-top: 1px solid #31554e; text-decoration: none; }
+.sidebar-status:hover { color: #fff; background: #224b43; }
+.sidebar-status.attention { color: #f0c979; }
+.sidebar-status.unavailable { color: #f2a6ac; }
 .logout-button { width: 100%; text-align: left; }
 .main-content { min-width: 0; }
 .page-container { width: min(1160px, 100%); margin: 0 auto; padding: 30px 34px 56px; }
@@ -236,12 +239,15 @@ a { color: inherit; }
 .question-main p { margin: 11px 0 0; color: #5a6764; font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
 
 .system-summary { display: grid; grid-template-columns: minmax(200px, .75fr) minmax(0, 1.5fr); background: #fff; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-.system-health { display: flex; align-items: center; gap: 12px; padding: 22px; border-right: 1px solid var(--border); }
+.system-health { display: flex; align-items: flex-start; gap: 12px; padding: 22px; border-right: 1px solid var(--border); }
 .health-indicator { display: grid; place-items: center; width: 42px; height: 42px; color: #176450; background: #dff0ea; border-radius: 8px; }
+.system-health.attention .health-indicator { color: #8a5a0a; background: #fff0d4; }
+.system-health.unavailable .health-indicator { color: #9d303a; background: #fde5e7; }
 .system-health div { display: flex; flex-direction: column; gap: 4px; }
 .system-health strong { font-size: 15px; }
 .system-health span { color: var(--muted); font-size: 11px; }
-.system-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; }
+.system-health small { margin-top: 3px; color: #566762; font-size: 10px; line-height: 1.4; }
+.system-facts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0; }
 .system-facts div { display: flex; flex-direction: column; justify-content: center; gap: 7px; min-width: 0; padding: 16px; border-right: 1px solid #e6ebe9; }
 .system-facts div:last-child { border-right: 0; }
 .system-facts dt { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
@@ -254,9 +260,10 @@ a { color: inherit; }
 .delivery-row > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .delivery-row strong { font-size: 13px; overflow-wrap: anywhere; }
 .delivery-row span { color: var(--muted); font-size: 11px; }
-.delivery-result { justify-self: end; overflow-wrap: anywhere; text-align: right; }
+.delivery-result { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; justify-self: end; overflow-wrap: anywhere; text-align: right; }
 .delivery-result.success { color: #176450; }
 .delivery-result.failed { color: #a4323d; }
+.delivery-result .text-button { min-height: 28px; padding: 0; font-size: 11px; }
 
 .state-view, .empty-state { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 130px; padding: 24px; color: var(--muted); font-size: 13px; }
 .error-notice, .success-notice { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 14px; padding: 10px 12px; border-radius: 6px; font-size: 13px; line-height: 1.45; }
@@ -348,7 +355,9 @@ a { color: inherit; }
   .question-heading { flex-direction: column; }
   .system-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .system-facts div:nth-child(2) { border-right: 0; }
-  .system-facts div:nth-child(-n+2) { border-bottom: 1px solid #e6ebe9; }
+  .system-facts div { border-bottom: 1px solid #e6ebe9; }
+  .system-facts div:nth-child(2n) { border-right: 0; }
+  .system-facts div:last-child { grid-column: 1 / -1; border-right: 0; border-bottom: 0; }
   .delivery-row { padding-inline: 13px; }
   .login-panel { padding: 23px; }
 }

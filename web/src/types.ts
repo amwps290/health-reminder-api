@@ -125,10 +125,21 @@ export interface TimelineJob {
 }
 
 export interface SystemStatus {
-  status: string;
+  status: "healthy" | "attention" | "unavailable";
+  statusMessage: string;
   timezone: string;
   currentTime: string;
-  jobs: { pending: number; retrying: number; failed: number };
+  jobs: { pending: number; retrying: number; failed: number; overdue: number };
+  scheduler: {
+    state: "healthy" | "running" | "missing" | "stale" | "failed";
+    lastRunAt: string | null;
+    outcome: string | null;
+    errorCode: string | null;
+  };
+  bark: {
+    configured: boolean;
+    lastSuccessfulDeliveryAt: string | null;
+  };
   lastSchedulerRun: Record<string, unknown> | null;
 }
 
@@ -143,6 +154,8 @@ export interface Delivery {
   source_type: string;
   scheduled_at: string;
   title: string;
+  job_status: TimelineJob["status"];
+  attempts: number;
 }
 
 export interface WeightRecord {

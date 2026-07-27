@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BellRing,
   CalendarDays,
@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 import { api } from "../api";
+import type { SystemStatus } from "../types";
 
 const navigation = [
   { to: "/", label: "今日", icon: LayoutDashboard, end: true },
@@ -26,10 +27,16 @@ const navigation = [
 
 export function AppLayout() {
   const queryClient = useQueryClient();
+  const systemStatus = useQuery({
+    queryKey: ["system-status"],
+    queryFn: () => api<SystemStatus>("/system/status"),
+    refetchInterval: 60_000,
+  });
   const logout = useMutation({
     mutationFn: () => api("/auth/logout", { method: "POST" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["session"] }),
   });
+  const health = getSidebarHealth(systemStatus.data, systemStatus.isError);
 
   return (
     <div className="app-shell">
@@ -46,10 +53,10 @@ export function AppLayout() {
             </NavLink>
           ))}
         </nav>
-        <div className="sidebar-status">
+        <NavLink to="/system" className={`sidebar-status ${health.tone}`}>
           <BellRing size={17} />
-          <span>Bark 已连接</span>
-        </div>
+          <span>{health.label}</span>
+        </NavLink>
         <button className="nav-link logout-button" onClick={() => logout.mutate()} disabled={logout.isPending}>
           <LogOut size={19} />
           <span>退出</span>
@@ -68,4 +75,15 @@ export function AppLayout() {
       </nav>
     </div>
   );
+}
+
+function getSidebarHealth(
+  status: SystemStatus | undefined,
+  requestFailed: boolean,
+): { tone: SystemStatus["status"] | "checking"; label: string } {
+  if (requestFailed) return { tone: "unavailable", label: "状态不可用" };
+  if (!status) return { tone: "checking", label: "正在检查调度" };
+  if (status.status === "healthy") return { tone: "healthy", label: "调度正常" };
+  if (status.status === "attention") return { tone: "attention", label: "需要检查" };
+  return { tone: "unavailable", label: "服务不可用" };
 }

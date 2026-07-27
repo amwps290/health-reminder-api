@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { AppError } from "../core/errors";
+import { AppError, conflict, notFound } from "../core/errors";
 import { getPaginationLimit, parseJson } from "../core/http";
 import { isInstantString } from "../core/time";
-import { type AppContext, getConfig } from "../core/types";
+import { DEFAULT_PROFILE_ID, type AppContext, getConfig } from "../core/types";
 import { sendBarkTest } from "../integrations/bark";
 
 const testNotificationInput = z.object({
@@ -13,35 +13,122 @@ const testNotificationInput = z.object({
 
 export const systemRoutes = new Hono<AppContext>();
 
+const SCHEDULER_STALE_AFTER_MS = 5 * 60_000;
+
+interface SchedulerRunRow {
+  started_at: string;
+  finished_at: string | null;
+  materialized_count: number;
+  claimed_count: number;
+  sent_count: number;
+  failed_count: number;
+  outcome: string;
+  error_code: string | null;
+}
+
 systemRoutes.get("/system/status", async (context) => {
+  const now = new Date();
+  const nowIso = now.toISOString();
   const lastRun = await context.env.DB
     .prepare(
       `SELECT started_at, finished_at, materialized_count, claimed_count,
               sent_count, failed_count, outcome, error_code
        FROM scheduler_runs ORDER BY started_at DESC LIMIT 1`,
     )
-    .first();
+    .first<SchedulerRunRow>();
   const counts = await context.env.DB
     .prepare(
       `SELECT
          SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
          SUM(CASE WHEN status = 'retry' THEN 1 ELSE 0 END) AS retrying,
-         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+         SUM(CASE
+           WHEN status = 'pending' AND scheduled_at < ? THEN 1
+           WHEN status = 'retry' AND next_attempt_at < ? THEN 1
+           ELSE 0
+         END) AS overdue
        FROM notification_jobs`,
     )
-    .first<{ pending: number | null; retrying: number | null; failed: number | null }>();
+    .bind(nowIso, nowIso)
+    .first<{
+      pending: number | null;
+      retrying: number | null;
+      failed: number | null;
+      overdue: number | null;
+    }>();
+  const lastSuccessfulDelivery = await context.env.DB
+    .prepare(
+      `SELECT attempted_at
+       FROM notification_deliveries
+       WHERE success = 1
+       ORDER BY attempted_at DESC
+       LIMIT 1`,
+    )
+    .first<{ attempted_at: string }>();
+
+  const jobs = {
+    pending: counts?.pending || 0,
+    retrying: counts?.retrying || 0,
+    failed: counts?.failed || 0,
+    overdue: counts?.overdue || 0,
+  };
+  const scheduler = getSchedulerHealth(lastRun, now);
+  const barkConfigured = Boolean(context.env.BARK_DEVICE_KEY);
+  const health = getOverallHealth(scheduler.state, barkConfigured, jobs);
+
   return context.json({
     data: {
-      status: "ok",
+      status: health.status,
+      statusMessage: health.message,
       timezone: getConfig(context.env).timeZone,
-      currentTime: new Date().toISOString(),
-      jobs: {
-        pending: counts?.pending || 0,
-        retrying: counts?.retrying || 0,
-        failed: counts?.failed || 0,
+      currentTime: nowIso,
+      jobs,
+      scheduler: {
+        state: scheduler.state,
+        lastRunAt: lastRun?.finished_at || lastRun?.started_at || null,
+        outcome: lastRun?.outcome || null,
+        errorCode: lastRun?.error_code || null,
+      },
+      bark: {
+        configured: barkConfigured,
+        lastSuccessfulDeliveryAt: lastSuccessfulDelivery?.attempted_at || null,
       },
       lastSchedulerRun: lastRun,
     },
+  });
+});
+
+systemRoutes.post("/notification-jobs/:id/retry", async (context) => {
+  const id = context.req.param("id");
+  const job = await context.env.DB
+    .prepare(
+      `SELECT id, status
+       FROM notification_jobs
+       WHERE id = ? AND profile_id = ?`,
+    )
+    .bind(id, DEFAULT_PROFILE_ID)
+    .first<{ id: string; status: string }>();
+  if (!job) throw notFound("通知任务");
+  if (job.status !== "failed") {
+    throw conflict("只有失败的通知任务可以重新发送");
+  }
+
+  const retryAt = new Date().toISOString();
+  const result = await context.env.DB
+    .prepare(
+      `UPDATE notification_jobs
+       SET status = 'retry', attempts = 0, next_attempt_at = ?,
+           claim_token = NULL, claimed_at = NULL, last_error = NULL, updated_at = ?
+       WHERE id = ? AND profile_id = ? AND status = 'failed'`,
+    )
+    .bind(retryAt, retryAt, id, DEFAULT_PROFILE_ID)
+    .run();
+  if (!result.meta.changes) {
+    throw conflict("通知任务状态已改变，请刷新后重试");
+  }
+
+  return context.json({
+    data: { id, status: "retry", nextAttemptAt: retryAt },
   });
 });
 
@@ -87,7 +174,8 @@ systemRoutes.get("/deliveries", async (context) => {
   const { results } = await context.env.DB
     .prepare(
       `SELECT d.id, d.job_id, d.attempted_at, d.success, d.http_status,
-              d.provider_code, d.error_code, j.source_type, j.scheduled_at, j.title
+              d.provider_code, d.error_code, j.source_type, j.scheduled_at, j.title,
+              j.status AS job_status, j.attempts
        FROM notification_deliveries d
        JOIN notification_jobs j ON j.id = d.job_id
        ORDER BY d.attempted_at DESC
@@ -97,3 +185,48 @@ systemRoutes.get("/deliveries", async (context) => {
     .all();
   return context.json({ data: results });
 });
+
+type SchedulerState = "healthy" | "running" | "missing" | "stale" | "failed";
+
+function getSchedulerHealth(
+  lastRun: SchedulerRunRow | null,
+  now: Date,
+): { state: SchedulerState } {
+  if (!lastRun) return { state: "missing" };
+  const lastRunAt = Date.parse(lastRun.finished_at || lastRun.started_at);
+  if (!Number.isFinite(lastRunAt) || now.getTime() - lastRunAt > SCHEDULER_STALE_AFTER_MS) {
+    return { state: "stale" };
+  }
+  if (lastRun.outcome === "running") return { state: "running" };
+  if (lastRun.outcome !== "success") return { state: "failed" };
+  return { state: "healthy" };
+}
+
+function getOverallHealth(
+  schedulerState: SchedulerState,
+  barkConfigured: boolean,
+  jobs: { failed: number; overdue: number },
+): { status: "healthy" | "attention" | "unavailable"; message: string } {
+  if (!barkConfigured) {
+    return { status: "unavailable", message: "Bark 设备尚未配置" };
+  }
+  if (schedulerState === "failed") {
+    return { status: "unavailable", message: "最近一次调度运行失败" };
+  }
+  if (schedulerState === "stale") {
+    return { status: "unavailable", message: "调度已超过 5 分钟未运行" };
+  }
+  if (schedulerState === "missing") {
+    return { status: "attention", message: "调度尚未运行" };
+  }
+  if (jobs.failed > 0) {
+    return { status: "attention", message: `有 ${jobs.failed} 个失败任务需要处理` };
+  }
+  if (jobs.overdue > 0) {
+    return { status: "attention", message: `有 ${jobs.overdue} 个任务已到期但尚未处理` };
+  }
+  if (schedulerState === "running") {
+    return { status: "healthy", message: "调度正在运行" };
+  }
+  return { status: "healthy", message: "调度运行正常" };
+}

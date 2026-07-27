@@ -101,8 +101,12 @@ GET/POST/PUT/DELETE  /api/v1/weights
 GET                  /api/v1/timeline
 GET                  /api/v1/deliveries
 POST                 /api/v1/notifications/test
+POST                 /api/v1/notification-jobs/:id/retry
 GET                  /api/v1/system/status
 ```
+
+系统状态会综合最近一次 Cron 运行结果、调度新鲜度、失败和过期任务以及 Bark 配置返回
+`healthy`、`attention` 或 `unavailable`。失败任务可由管理员手动重新排队，历史投递记录会保留。
 
 日志使用 request ID，并禁止输出令牌、Bark key、药名、剂量、医嘱和通知正文。
 
