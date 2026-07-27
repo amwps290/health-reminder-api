@@ -169,7 +169,15 @@ systemRoutes.get("/timeline", async (context) => {
       `SELECT j.id, j.source_type, j.source_id, j.scheduled_at, j.title, j.body,
               j.group_name, j.status, j.attempts, j.sent_at, j.last_error,
               CASE WHEN j.source_type = 'medication' THEN s.medication_id ELSE NULL END AS owner_id,
-              r.id AS record_id, r.status AS adherence_status, r.taken_at
+              r.id AS record_id, r.status AS adherence_status, r.taken_at,
+              CASE
+                WHEN j.source_type != 'medication'
+                  OR j.status = 'canceled'
+                  OR j.source_version != s.version THEN NULL
+                WHEN r.status IS NOT NULL THEN r.status
+                WHEN j.scheduled_at <= ? THEN 'unrecorded'
+                ELSE 'upcoming'
+              END AS adherence_state
        FROM notification_jobs j
        LEFT JOIN medication_schedules s
          ON j.source_type = 'medication' AND s.id = j.source_id
@@ -179,7 +187,7 @@ systemRoutes.get("/timeline", async (context) => {
        ORDER BY j.scheduled_at
        LIMIT 500`,
     )
-    .bind(from, to)
+    .bind(now.toISOString(), from, to)
     .all();
   return context.json({ data: results, meta: { from, to } });
 });

@@ -6,7 +6,7 @@ import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState, ErrorNotice, LoadingView } from "../components/StateViews";
 import { StatusBadge } from "../components/StatusBadge";
-import type { MedicationRecord, MedicationRecordStatus, PregnancyStatus, SystemStatus, TimelineJob } from "../types";
+import type { MedicationAdherenceState, MedicationRecord, MedicationRecordStatus, PregnancyStatus, SystemStatus, TimelineJob } from "../types";
 import { addDateDays, BUSINESS_TIME_ZONE, formatDateTime, fromDateTimeInput, todayInBusinessTimeZone } from "../utils";
 
 export function DashboardPage() {
@@ -25,6 +25,7 @@ export function DashboardPage() {
   const timeline = useQuery({
     queryKey: ["timeline", range.from, range.to],
     queryFn: () => api<TimelineJob[]>(`/timeline?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`),
+    refetchInterval: 60_000,
   });
   const testPush = useMutation({
     mutationFn: () => api("/notifications/test", {
@@ -51,6 +52,7 @@ export function DashboardPage() {
       ]);
     },
   });
+  const adherenceSummary = summarizeMedicationAdherence(timeline.data);
 
   return (
     <div className="page-container">
@@ -83,39 +85,55 @@ export function DashboardPage() {
       </section>
 
       <section className="content-section">
-        <div className="section-heading"><h2>今日提醒</h2><span>{timeline.data?.length ?? 0} 项</span></div>
+        <div className="section-heading timeline-heading">
+          <h2>今日提醒</h2>
+          <div className="timeline-heading-meta">
+            <span>{timeline.data?.length ?? 0} 项</span>
+            {adherenceSummary.total > 0 && (
+              <div className="adherence-summary" aria-label="今日服药执行汇总">
+                <span className="taken">已服 <strong>{adherenceSummary.taken}</strong></span>
+                <span className="skipped">跳过 <strong>{adherenceSummary.skipped}</strong></span>
+                <span className="unrecorded">未记录 <strong>{adherenceSummary.unrecorded}</strong></span>
+                <span className="upcoming">待服 <strong>{adherenceSummary.upcoming}</strong></span>
+              </div>
+            )}
+          </div>
+        </div>
         {timeline.isPending && <LoadingView />}
         {timeline.isError && <ErrorNotice message={timeline.error.message} />}
         {timeline.data?.length === 0 && <EmptyState title="今天没有提醒" />}
         <div className="task-list">
           {timeline.data?.map((job) => (
-            <article className={`task-row ${job.source_type === "medication" ? "has-record-actions" : ""}`} key={job.id}>
+            <article className={`task-row ${job.adherence_state ? "has-record-actions" : ""}`} key={job.id}>
               <div className={`task-icon ${job.source_type}`}>
                 {job.source_type === "medication" ? <BellRing size={19} /> : job.source_type === "injection" ? <Syringe size={19} /> : <Clock3 size={19} />}
               </div>
               <div className="task-main"><strong>{job.title}</strong><p>{job.body}</p></div>
               <time>{formatDateTime(job.scheduled_at).slice(-5)}</time>
               <StatusBadge status={job.status} />
-              {job.source_type === "medication" && job.owner_id && (
-                <div className="task-record-actions" role="group" aria-label={`${job.title}服用结果`}>
-                  <button
-                    type="button"
-                    className={job.adherence_status === "taken" ? "active taken" : ""}
-                    aria-label="标记为已服用"
-                    title="已服用"
-                    aria-pressed={job.adherence_status === "taken"}
-                    disabled={recordMedication.isPending && recordMedication.variables?.job.id === job.id}
-                    onClick={() => recordMedication.mutate({ job, recordStatus: "taken" })}
-                  ><Check size={17} /></button>
-                  <button
-                    type="button"
-                    className={job.adherence_status === "skipped" ? "active skipped" : ""}
-                    aria-label="标记为已跳过"
-                    title="已跳过"
-                    aria-pressed={job.adherence_status === "skipped"}
-                    disabled={recordMedication.isPending && recordMedication.variables?.job.id === job.id}
-                    onClick={() => recordMedication.mutate({ job, recordStatus: "skipped" })}
-                  ><SkipForward size={17} /></button>
+              {job.source_type === "medication" && job.owner_id && job.adherence_state && (
+                <div className="task-record-panel">
+                  <span className={`adherence-state ${job.adherence_state}`}>{adherenceLabels[job.adherence_state]}</span>
+                  <div className="task-record-actions" role="group" aria-label={`${job.title}服用结果`}>
+                    <button
+                      type="button"
+                      className={job.adherence_status === "taken" ? "active taken" : ""}
+                      aria-label={`${job.title}标记为已服用`}
+                      title="已服用"
+                      aria-pressed={job.adherence_status === "taken"}
+                      disabled={recordMedication.isPending && recordMedication.variables?.job.id === job.id}
+                      onClick={() => recordMedication.mutate({ job, recordStatus: "taken" })}
+                    ><Check size={17} /></button>
+                    <button
+                      type="button"
+                      className={job.adherence_status === "skipped" ? "active skipped" : ""}
+                      aria-label={`${job.title}标记为已跳过`}
+                      title="已跳过"
+                      aria-pressed={job.adherence_status === "skipped"}
+                      disabled={recordMedication.isPending && recordMedication.variables?.job.id === job.id}
+                      onClick={() => recordMedication.mutate({ job, recordStatus: "skipped" })}
+                    ><SkipForward size={17} /></button>
+                  </div>
                 </div>
               )}
             </article>
@@ -125,6 +143,23 @@ export function DashboardPage() {
       {pregnancyEditorOpen && <PregnancyModal pregnancy={pregnancy.data} onClose={() => setPregnancyEditorOpen(false)} />}
     </div>
   );
+}
+
+const adherenceLabels: Record<MedicationAdherenceState, string> = {
+  taken: "已服用",
+  skipped: "已跳过",
+  unrecorded: "未记录",
+  upcoming: "待服用",
+};
+
+function summarizeMedicationAdherence(jobs?: TimelineJob[]) {
+  const summary = { total: 0, taken: 0, skipped: 0, unrecorded: 0, upcoming: 0 };
+  for (const job of jobs || []) {
+    if (!job.adherence_state) continue;
+    summary.total += 1;
+    summary[job.adherence_state] += 1;
+  }
+  return summary;
 }
 
 function PregnancyCard({ pregnancy, loading, onEdit }: { pregnancy?: PregnancyStatus; loading: boolean; onEdit: () => void }) {

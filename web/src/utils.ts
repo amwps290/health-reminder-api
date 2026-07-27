@@ -47,16 +47,16 @@ export function addDateDays(value: string, days: number): string {
 }
 
 function partsInBusinessTimeZone(value: Date): string[] {
-  const values = new Map(
-    new Intl.DateTimeFormat("en-CA", {
-      timeZone: BUSINESS_TIME_ZONE,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    }).formatToParts(value).map((part) => [part.type, part.value]),
-  );
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: BUSINESS_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(value);
+  const values = new Map<string, string>();
+  for (const part of parts) values.set(part.type, part.value);
   return ["year", "month", "day", "hour", "minute"].map((part) => values.get(part) || "");
 }

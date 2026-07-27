@@ -29,6 +29,7 @@ export interface MedicationInput {
 }
 
 export type MedicationRecordStatus = "taken" | "skipped";
+export type MedicationAdherenceState = MedicationRecordStatus | "upcoming" | "unrecorded";
 
 export interface MedicationRecord {
   id: string;
@@ -141,6 +142,7 @@ export interface TimelineJob {
   last_error: string | null;
   record_id: string | null;
   adherence_status: MedicationRecordStatus | null;
+  adherence_state: MedicationAdherenceState | null;
   taken_at: string | null;
 }
 

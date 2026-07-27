@@ -67,6 +67,12 @@ describe("health reminder API", () => {
       .bind(medication.schedule.id)
       .first<{ id: string; scheduled_at: string }>();
     expect(pendingJob).not.toBeNull();
+    const upcomingTimeline = await request(
+      `/api/v1/timeline?from=${encodeURIComponent(pendingJob!.scheduled_at)}&to=${encodeURIComponent(pendingJob!.scheduled_at)}`,
+    );
+    expect(await upcomingTimeline.json()).toMatchObject({
+      data: [{ id: pendingJob!.id, adherence_status: null, adherence_state: "upcoming" }],
+    });
     const takenAt = new Date().toISOString();
     const recorded = await request(`/api/v1/medications/${medication.id}/records`, {
       method: "POST",
@@ -102,6 +108,7 @@ describe("health reminder API", () => {
         id: pendingJob!.id,
         owner_id: medication.id,
         adherence_status: "taken",
+        adherence_state: "taken",
         taken_at: takenAt,
       }],
     });
@@ -117,11 +124,52 @@ describe("health reminder API", () => {
     });
     expect(skipped.status).toBe(201);
     expect(await skipped.json()).toMatchObject({ data: { status: "skipped", takenAt: null } });
+    const skippedTimeline = await request(
+      `/api/v1/timeline?from=${encodeURIComponent(pendingJob!.scheduled_at)}&to=${encodeURIComponent(pendingJob!.scheduled_at)}`,
+    );
+    expect(await skippedTimeline.json()).toMatchObject({
+      data: [{ id: pendingJob!.id, adherence_status: "skipped", adherence_state: "skipped" }],
+    });
     const recordCount = await env.DB
       .prepare("SELECT COUNT(*) AS count FROM medication_records WHERE schedule_id = ?")
       .bind(medication.schedule.id)
       .first<{ count: number }>();
     expect(recordCount?.count).toBe(1);
+
+    const anotherPendingJob = await env.DB
+      .prepare(
+        `SELECT id FROM notification_jobs
+         WHERE source_type = 'medication' AND source_id = ? AND status = 'pending' AND id != ?
+         ORDER BY scheduled_at LIMIT 1`,
+      )
+      .bind(medication.schedule.id, pendingJob!.id)
+      .first<{ id: string }>();
+    const overdueAt = new Date(Date.now() - 60_000).toISOString();
+    await env.DB
+      .prepare("UPDATE notification_jobs SET scheduled_at = ?, next_attempt_at = ? WHERE id = ?")
+      .bind(overdueAt, overdueAt, anotherPendingJob!.id)
+      .run();
+    const overdueTimeline = await request(
+      `/api/v1/timeline?from=${encodeURIComponent(overdueAt)}&to=${encodeURIComponent(overdueAt)}`,
+    );
+    expect(await overdueTimeline.json()).toMatchObject({
+      data: [{ id: anotherPendingJob!.id, adherence_status: null, adherence_state: "unrecorded" }],
+    });
+
+    const canceledJob = await env.DB
+      .prepare(
+        `SELECT id, scheduled_at FROM notification_jobs
+         WHERE source_type = 'medication' AND source_id = ? AND status = 'canceled'
+         ORDER BY scheduled_at LIMIT 1`,
+      )
+      .bind(medication.schedule.id)
+      .first<{ id: string; scheduled_at: string }>();
+    const canceledTimeline = await request(
+      `/api/v1/timeline?from=${encodeURIComponent(canceledJob!.scheduled_at)}&to=${encodeURIComponent(canceledJob!.scheduled_at)}`,
+    );
+    expect(await canceledTimeline.json()).toMatchObject({
+      data: [{ id: canceledJob!.id, adherence_state: null }],
+    });
   });
 
   it("creates an event, note and linked question", async () => {

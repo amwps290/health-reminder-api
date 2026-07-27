@@ -87,6 +87,8 @@ medication:{scheduleId}:{scheduleVersion}:2026-07-30T00:00:00.000Z
 
 修改计划时增加版本，取消旧版本尚未发送的任务并生成新任务。任务领取使用带 claim token 的条件更新，降低 Cron 重叠造成的重复发送风险。由于 Bark/APNs 不提供端到端的幂等确认，系统采用“至少一次发送”语义：极端网络故障时允许极少数重复通知，以避免主动丢弃不确定的通知。
 
+今日时间线将 Bark 投递状态与真实服药执行状态分开显示。有效服药任务按计划时间和 `medication_records` 计算为待服用、未记录、已服用或已跳过；取消的旧版本任务不进入执行状态汇总。
+
 ## 6. API 与安全
 
 API 统一使用 `/api/v1`。首次登录时输入 `ADMIN_API_TOKEN`，Worker 验证后签发带签名、有效期有限的 `HttpOnly + Secure + SameSite=Strict` 会话 Cookie。Bark device key、Bark Basic Auth 和会话签名密钥均通过 Worker Secrets 注入，不写入 D1、浏览器存储或 Git。Bearer Token 仍保留给命令行手动测试。

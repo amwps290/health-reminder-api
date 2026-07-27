@@ -130,9 +130,17 @@ a { color: inherit; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; min-height: 52px; padding: 0 18px; border-bottom: 1px solid var(--border); }
 .section-heading h2 { margin: 0; font-size: 15px; }
 .section-heading span { color: var(--muted); font-size: 12px; }
+.timeline-heading-meta { display: flex; align-items: center; justify-content: flex-end; gap: 13px; min-width: 0; }
+.adherence-summary { display: flex; align-items: center; gap: 10px; }
+.adherence-summary span { display: inline-flex; align-items: baseline; gap: 3px; white-space: nowrap; font-size: 11px; }
+.adherence-summary strong { color: currentColor; font-size: 12px; font-variant-numeric: tabular-nums; }
+.adherence-summary .taken { color: #176450; }
+.adherence-summary .skipped { color: #80540e; }
+.adherence-summary .unrecorded { color: #9a3039; }
+.adherence-summary .upcoming { color: #52635e; }
 .task-list, .delivery-list { display: flex; flex-direction: column; }
 .task-row { display: grid; grid-template-columns: 38px minmax(0, 1fr) 58px 68px; align-items: center; gap: 12px; min-height: 72px; padding: 12px 18px; border-bottom: 1px solid #e8edeb; }
-.task-row.has-record-actions { grid-template-columns: 38px minmax(0, 1fr) 58px 68px 92px; }
+.task-row.has-record-actions { grid-template-columns: 38px minmax(0, 1fr) 58px 68px 96px; }
 .task-row:last-child { border-bottom: 0; }
 .task-icon, .item-icon { display: grid; place-items: center; border-radius: 8px; }
 .task-icon { width: 36px; height: 36px; }
@@ -143,6 +151,12 @@ a { color: inherit; }
 .task-main strong { display: block; margin-bottom: 3px; font-size: 14px; }
 .task-main p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; white-space: pre-line; overflow-wrap: anywhere; }
 .task-row time { color: #43534f; font-variant-numeric: tabular-nums; font-size: 13px; }
+.task-record-panel { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 4px; }
+.adherence-state { display: inline-flex; min-height: 20px; align-items: center; padding: 1px 6px; border-radius: 5px; font-size: 11px; font-weight: 650; white-space: nowrap; }
+.adherence-state.taken { color: #176450; background: #dff0ea; }
+.adherence-state.skipped { color: #80540e; background: #fff0d4; }
+.adherence-state.unrecorded { color: #982f39; background: #fde5e7; }
+.adherence-state.upcoming { color: #52635e; background: #e8eceb; }
 .task-record-actions { display: grid; grid-template-columns: repeat(2, 44px); padding: 2px; background: #edf1f0; border-radius: 7px; }
 .task-record-actions button { display: grid; width: 44px; height: 44px; place-items: center; padding: 0; color: #60706b; background: transparent; border: 0; border-radius: 5px; }
 .task-record-actions button:hover { color: #263a34; background: #fff; }
@@ -366,7 +380,10 @@ a { color: inherit; }
   .task-row { grid-template-columns: 34px minmax(0, 1fr) 54px; gap: 9px; padding: 11px 13px; }
   .task-row.has-record-actions { grid-template-columns: 34px minmax(0, 1fr) 54px; }
   .task-row .status-badge { grid-column: 2 / 4; justify-self: start; }
-  .task-record-actions { grid-column: 2 / 4; justify-self: start; }
+  .task-record-panel { grid-column: 2 / 4; justify-self: start; }
+  .timeline-heading { min-height: 64px; align-items: flex-start; flex-direction: column; justify-content: center; gap: 6px; padding-block: 9px; }
+  .timeline-heading-meta { width: 100%; align-items: flex-start; flex-direction: column; gap: 5px; }
+  .adherence-summary { width: 100%; flex-wrap: wrap; gap: 4px 10px; }
   .task-icon { width: 32px; height: 32px; }
   .item-card { padding: 15px; }
   .event-time { font-size: 17px; }
