@@ -3,4 +3,5 @@ SESSION_SECRET=replace-with-an-independent-long-random-secret
 BARK_DEVICE_KEY=replace-with-the-device-key-from-bark
 BARK_BASIC_AUTH_USER=replace-if-enabled
 BARK_BASIC_AUTH_PASSWORD=replace-if-enabled
+BARK_ICON_BASE_URL=https://health-reminder.example.com
 BARK_DEBUG=true

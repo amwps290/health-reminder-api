@@ -26,7 +26,7 @@
 - `SESSION_SECRET`：重新生成并写入 Worker Secret；旧会话会自然失效。
 - `BARK_DEVICE_KEY`：从 Bark App 或自建 Bark 服务重新取得并写入 Worker Secret。
 - `BARK_BASIC_AUTH_USER` / `BARK_BASIC_AUTH_PASSWORD`：如 Bark 服务启用 Basic Auth，两项必须同时恢复。
-- Worker Variables：核对 `APP_TIME_ZONE=Asia/Shanghai`、`BARK_BASE_URL`、任务窗口、重试次数和保留天数。
+- Worker Variables：核对 `APP_TIME_ZONE=Asia/Shanghai`、`BARK_BASE_URL`、`BARK_ICON_BASE_URL`、任务窗口、重试次数和保留天数。
 - Static Assets：运行 `corepack pnpm run build`，确认 `web/dist` 已生成后部署 Worker。
 - Cron：确认触发器为每分钟一次，并观察至少两次连续成功运行。
 - Bark：发送测试并在 iPhone 上人工确认展示。接口成功只表示 Bark 服务端接受，不证明 APNs 最终送达。

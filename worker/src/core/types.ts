@@ -7,6 +7,7 @@ export interface Env {
   BARK_DEVICE_KEY?: string;
   BARK_BASIC_AUTH_USER?: string;
   BARK_BASIC_AUTH_PASSWORD?: string;
+  BARK_ICON_BASE_URL?: string;
   BARK_DEBUG?: string;
   JOB_HORIZON_DAYS?: string;
   MAX_DELIVERY_ATTEMPTS?: string;

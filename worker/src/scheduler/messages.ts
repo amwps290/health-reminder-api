@@ -48,10 +48,16 @@ export function eventMessage(input: {
     follow_up: "复诊提醒",
     other: "事项提醒",
   };
+  const groups: Record<string, string> = {
+    registration: "health-event-registration",
+    checkup: "health-event-checkup",
+    follow_up: "health-event-follow_up",
+    other: "health-event-other",
+  };
   return {
     title: labels[input.type] || "事项提醒",
     body: [input.title, input.location, input.notes].filter(Boolean).join("\n"),
-    group: "health-event",
+    group: groups[input.type] || "health-event-other",
     level: "timeSensitive",
   };
 }

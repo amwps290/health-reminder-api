@@ -36,10 +36,25 @@
 | `BARK_BASIC_AUTH_USER` | Secret，可选 | Bark Basic Auth 用户名 |
 | `BARK_BASIC_AUTH_PASSWORD` | Secret，可选 | Bark Basic Auth 密码 |
 | `BARK_BASE_URL` | Variable | 自建 Bark 服务地址 |
+| `BARK_ICON_BASE_URL` | Variable，可选 | 当前健康提醒 Worker 的公网根地址，用于加载分类通知图片 |
 | `SCHEDULER_RUN_RETENTION_DAYS` | Variable，可选 | 调度日志保留天数，默认 30 |
 | `NOTIFICATION_HISTORY_RETENTION_DAYS` | Variable，可选 | 已发送/已取消通知历史保留天数，默认 365 |
 
 Basic Auth 用户名和密码必须同时配置，未启用时两项都不要添加。
+
+若要显示分类通知图片，将 `BARK_ICON_BASE_URL` 设置为当前应用的公网地址，例如
+`https://health-reminder.example.com`。不要填写 Bark 服务地址。未配置时仍会使用分类铃声，只是不发送
+`icon` 字段。默认分类样式如下：
+
+| 类型 | Bark 铃声 | 图片 |
+| --- | --- | --- |
+| 服药 | `healthnotification` | `medication.png` |
+| 注射 | `bell` | `injection.png` |
+| 挂号 | `calypso` | `registration.png` |
+| 检查 | `chime` | `checkup.png` |
+| 复诊 | `minuet` | `follow-up.png` |
+| 其他事项 | `glass` | `event.png` |
+| 测试通知 | `electronic` | `test.png` |
 
 ## 更新部署
 

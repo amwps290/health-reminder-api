@@ -7,6 +7,8 @@ export interface BarkMessage {
   body: string;
   group: string;
   level: "critical" | "active" | "timeSensitive" | "passive";
+  sound?: string;
+  icon?: string;
 }
 
 export interface BarkResult {
@@ -23,6 +25,22 @@ export interface NotificationChannel {
 
 type BarkLogger = Pick<Console, "log" | "error">;
 type BarkFetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+interface BarkStyle {
+  sound: string;
+  iconFile: string;
+}
+
+const BARK_STYLES: Readonly<Record<string, BarkStyle>> = {
+  "health-medication": { sound: "healthnotification", iconFile: "medication.png" },
+  "health-injection": { sound: "bell", iconFile: "injection.png" },
+  "health-event-registration": { sound: "calypso", iconFile: "registration.png" },
+  "health-event-checkup": { sound: "chime", iconFile: "checkup.png" },
+  "health-event-follow_up": { sound: "minuet", iconFile: "follow-up.png" },
+  "health-event-other": { sound: "glass", iconFile: "event.png" },
+  "health-event": { sound: "glass", iconFile: "event.png" },
+  "health-test": { sound: "electronic", iconFile: "test.png" },
+};
 
 // Workers fetch must be invoked through the global binding. Storing it directly on
 // a class and calling it as a method gives it the class instance as `this`.
@@ -73,6 +91,9 @@ export class BarkChannel implements NotificationChannel {
 
     const config = getConfig(this.env);
     const endpoint = `${config.barkBaseUrl}/push`;
+    const style = BARK_STYLES[message.group];
+    const sound = message.sound ?? style?.sound;
+    const icon = message.icon ?? buildIconUrl(this.env.BARK_ICON_BASE_URL, style?.iconFile);
     const pushId = crypto.randomUUID();
     const startedAt = Date.now();
     const headers = new Headers({ "Content-Type": "application/json; charset=utf-8" });
@@ -89,6 +110,8 @@ export class BarkChannel implements NotificationChannel {
       authConfigured: Boolean(username || password),
       group: message.group,
       level: message.level,
+      sound,
+      iconConfigured: Boolean(icon),
       titleLength: message.title.length,
       bodyLength: message.body.length,
     };
@@ -107,6 +130,8 @@ export class BarkChannel implements NotificationChannel {
           body: message.body,
           group: message.group,
           level: message.level,
+          sound,
+          icon,
         }),
       });
     } catch (error) {
@@ -185,6 +210,12 @@ export class BarkChannel implements NotificationChannel {
   private logFailure(details: Record<string, unknown>): void {
     this.logger.error(JSON.stringify({ event: "bark_push_failed", ...details }));
   }
+}
+
+function buildIconUrl(baseUrl: string | undefined, iconFile: string | undefined): string | undefined {
+  const normalizedBaseUrl = baseUrl?.trim().replace(/\/+$/, "");
+  if (!normalizedBaseUrl || !iconFile) return undefined;
+  return `${normalizedBaseUrl}/notification-icons/${iconFile}`;
 }
 
 function isDebugEnabled(value: string | undefined): boolean {

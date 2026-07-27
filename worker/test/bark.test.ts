@@ -14,6 +14,7 @@ describe("BarkChannel", () => {
         BARK_DEVICE_KEY: "device-key",
         BARK_BASIC_AUTH_USER: "user",
         BARK_BASIC_AUTH_PASSWORD: "password",
+        BARK_ICON_BASE_URL: "https://health.example.test/",
         BARK_DEBUG: "true",
       } as Env,
       fetcher,
@@ -35,6 +36,8 @@ describe("BarkChannel", () => {
       device_key: "device-key",
       title: "服药提醒",
       level: "timeSensitive",
+      sound: "healthnotification",
+      icon: "https://health.example.test/notification-icons/medication.png",
     });
     expect(logger.log).toHaveBeenCalledTimes(2);
     expect(JSON.parse(logger.log.mock.calls[0]![0])).toMatchObject({
@@ -44,6 +47,8 @@ describe("BarkChannel", () => {
       authConfigured: true,
       group: "health-medication",
       level: "timeSensitive",
+      sound: "healthnotification",
+      iconConfigured: true,
     });
     expect(JSON.parse(logger.log.mock.calls[1]![0])).toMatchObject({
       event: "bark_push_succeeded",
@@ -54,6 +59,67 @@ describe("BarkChannel", () => {
     expect(logger.log.mock.calls.flat().join(" ")).not.toContain("device-key");
     expect(logger.log.mock.calls.flat().join(" ")).not.toContain("钙片");
     expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["health-injection", "bell", "injection.png"],
+    ["health-event-registration", "calypso", "registration.png"],
+    ["health-event-checkup", "chime", "checkup.png"],
+    ["health-event-follow_up", "minuet", "follow-up.png"],
+    ["health-event-other", "glass", "event.png"],
+    ["health-event", "glass", "event.png"],
+    ["health-test", "electronic", "test.png"],
+  ])("applies the %s notification style", async (group, sound, iconFile) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({ code: 200, message: "success" }),
+    );
+    const channel = new BarkChannel(
+      {
+        BARK_BASE_URL: "https://bark.example.test",
+        BARK_DEVICE_KEY: "device-key",
+        BARK_ICON_BASE_URL: "https://health.example.test/app/",
+      } as Env,
+      fetcher,
+      { log: vi.fn(), error: vi.fn() },
+    );
+
+    await channel.send({ title: "提醒", body: "正文", group, level: "timeSensitive" });
+
+    const [, init] = fetcher.mock.calls[0]!;
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      sound,
+      icon: `https://health.example.test/app/notification-icons/${iconFile}`,
+    });
+  });
+
+  it("allows a message to override its category style", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({ code: 200, message: "success" }),
+    );
+    const channel = new BarkChannel(
+      {
+        BARK_BASE_URL: "https://bark.example.test",
+        BARK_DEVICE_KEY: "device-key",
+        BARK_ICON_BASE_URL: "https://health.example.test",
+      } as Env,
+      fetcher,
+      { log: vi.fn(), error: vi.fn() },
+    );
+
+    await channel.send({
+      title: "提醒",
+      body: "正文",
+      group: "health-medication",
+      level: "timeSensitive",
+      sound: "noir",
+      icon: "https://images.example.test/custom.png",
+    });
+
+    const [, init] = fetcher.mock.calls[0]!;
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      sound: "noir",
+      icon: "https://images.example.test/custom.png",
+    });
   });
 
   it("matches bark-serverless auth and plain-text error behavior", async () => {

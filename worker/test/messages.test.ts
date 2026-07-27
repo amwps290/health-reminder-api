@@ -16,11 +16,20 @@ describe("notification messages", () => {
     expect(eventMessage({ type: "checkup", title: "产检", location: "医院", notes: "带资料" })).toMatchObject({
       title: "检查提醒",
       body: "产检\n医院\n带资料",
+      group: "health-event-checkup",
     });
     expect(injectionMessage({ name: "肝素", dose: "1 支", site: "腹部", instructions: "遵医嘱" }, "right")).toMatchObject({
       title: "注射提醒",
       body: "肝素 1 支\n注射部位：腹部右侧\n遵医嘱",
     });
+  });
+
+  it("uses a distinct Bark group for every event type", () => {
+    const base = { title: "事项", location: "", notes: "" };
+    expect(eventMessage({ ...base, type: "registration" }).group).toBe("health-event-registration");
+    expect(eventMessage({ ...base, type: "checkup" }).group).toBe("health-event-checkup");
+    expect(eventMessage({ ...base, type: "follow_up" }).group).toBe("health-event-follow_up");
+    expect(eventMessage({ ...base, type: "other" }).group).toBe("health-event-other");
   });
 
   it("uses the next real injection occurrence to choose the test side", () => {
