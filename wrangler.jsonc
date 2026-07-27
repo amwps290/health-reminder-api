@@ -1,0 +1,31 @@
+{
+  "$schema": "worker/node_modules/wrangler/config-schema.json",
+  "name": "health-reminder-api",
+  "main": "worker/src/index.ts",
+  "compatibility_date": "2026-07-26",
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "web/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/healthz"]
+  },
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "health-reminder",
+      "database_id": "8e26f640-c44c-47d7-a8ab-504f87835f6a",
+      "migrations_dir": "worker/migrations"
+    }
+  ],
+  "vars": {
+    "APP_TIME_ZONE": "Asia/Shanghai",
+    "BARK_BASE_URL": "https://bark.191315.xyz",
+    "JOB_HORIZON_DAYS": "30",
+    "MAX_DELIVERY_ATTEMPTS": "4"
+  }
+}

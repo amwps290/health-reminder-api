@@ -1,0 +1,9 @@
+packages:
+  - worker
+  - web
+allowBuilds:
+  esbuild: true
+  workerd: true
+minimumReleaseAgeExclude:
+  - '@cloudflare/workers-types@5.20260726.1'
+  - lucide-react@1.27.0

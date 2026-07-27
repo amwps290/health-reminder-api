@@ -1,0 +1,33 @@
+{
+  "name": "health-reminder-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm --prefix web install && npm --prefix worker install && npm --prefix web run build",
+    "deploy": "npm --prefix worker exec -- wrangler d1 migrations apply DB --remote --config wrangler.jsonc && npm --prefix worker exec -- wrangler deploy --config wrangler.jsonc",
+    "typecheck": "npm --prefix worker run typecheck && npm --prefix web run typecheck"
+  },
+  "cloudflare": {
+    "bindings": {
+      "ADMIN_API_TOKEN": {
+        "description": "管理端登录令牌。建议使用 32 位以上随机字符串。"
+      },
+      "SESSION_SECRET": {
+        "description": "HttpOnly 会话签名密钥。建议使用独立的 32 位以上随机字符串。"
+      },
+      "BARK_DEVICE_KEY": {
+        "description": "Bark iPhone 设备 key，可从你的 Bark 服务或 Bark App 中获取。"
+      },
+      "BARK_BASIC_AUTH_USER": {
+        "description": "可选。如果你的 Bark 服务开启 Basic Auth，填写用户名；否则留空。"
+      },
+      "BARK_BASIC_AUTH_PASSWORD": {
+        "description": "可选。如果你的 Bark 服务开启 Basic Auth，填写密码；否则留空。"
+      }
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
