@@ -6,6 +6,7 @@ import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState, ErrorNotice, LoadingView } from "../components/StateViews";
 import type { PregnancyStatus, WeightInput, WeightRecord } from "../types";
+import { todayInBusinessTimeZone } from "../utils";
 
 const DAY_MS = 86_400_000;
 
@@ -27,7 +28,7 @@ export function WeightsPage() {
 
   const records = weights.data ?? [];
   const latest = records.at(-1);
-  const today = pregnancy.data?.today ?? toLocalDate(new Date());
+  const today = pregnancy.data?.today ?? todayInBusinessTimeZone();
   const todayRecord = records.find((record) => record.measuredOn === today);
   const subtitle = pregnancy.data?.configured
     ? `当前孕 ${pregnancy.data.currentWeeks} 周 ${pregnancy.data.currentDays} 天`
@@ -354,9 +355,4 @@ function formatDisplayDate(date: string): string {
 function formatSignedWeight(value: number): string {
   const rounded = Math.round(value * 10) / 10;
   return `${rounded > 0 ? "+" : ""}${rounded.toFixed(1)} kg`;
-}
-
-function toLocalDate(date: Date): string {
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
 }

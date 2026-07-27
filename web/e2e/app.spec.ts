@@ -22,14 +22,21 @@ test("creates and removes a medication plan", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: "登录" }).click();
   await page.getByRole("link", { name: "服药" }).click();
   await expect(page.getByRole("heading", { name: "服药计划" })).toBeVisible();
-  await page.getByRole("button", { name: "新增" }).click();
+  const addButton = page.getByRole("button", { name: "新增" });
+  await addButton.click();
   await expect(page.getByRole("button", { name: "测试通知" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "新增服药计划" })).toHaveCount(0);
+  await expect(addButton).toBeFocused();
+  await addButton.click();
 
   const name = `页面测试-${testInfo.project.name}`;
   const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
   await page.getByLabel("名称").fill(name);
   await page.getByLabel("单次剂量").fill("1 片");
   await page.getByLabel("服用说明").fill("饭后服用");
+  await page.locator(".modal-backdrop").click({ position: { x: 4, y: 4 } });
+  await expect(page.getByRole("dialog", { name: "新增服药计划" })).toBeVisible();
   await page.getByLabel("开始日期").fill(tomorrow);
   await page.getByRole("button", { name: "每日时间 1" }).click();
   await page.getByRole("button", { name: "09" }).click();
@@ -65,7 +72,15 @@ test("creates an alternating injection plan", async ({ page }, testInfo) => {
   const card = page.getByRole("article").filter({ hasText: name });
   await expect(card.getByRole("heading", { name })).toBeVisible();
   await expect(card).toContainText("每隔 3 天");
-  await expect(card).toContainText("首次右侧，以后每次交替");
+  await expect(card).toContainText("下一次预计右侧");
+
+  await card.getByRole("button", { name: "执行记录" }).click();
+  const recordDialog = page.getByRole("dialog", { name: `${name} · 执行记录` });
+  await recordDialog.getByRole("button", { name: "右侧" }).click();
+  await recordDialog.getByRole("button", { name: "保存记录" }).click();
+  await expect(recordDialog).toContainText("执行记录已保存");
+  await recordDialog.getByRole("button", { name: "关闭" }).click();
+  await expect(card).toContainText("下一次预计左侧");
 
   page.once("dialog", (dialog) => dialog.accept());
   await card.getByRole("button", { name: "删除" }).click();

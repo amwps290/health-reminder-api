@@ -1,3 +1,5 @@
+import { todayInBusinessTimeZone } from "./utils";
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -46,4 +48,29 @@ export function jsonBody(value: unknown): Pick<RequestInit, "body" | "headers"> 
     body: JSON.stringify(value),
     headers: { "Content-Type": "application/json" },
   };
+}
+
+export async function downloadApiFile(path: string): Promise<{ blob: Blob; filename: string }> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/v1${path}`, { credentials: "same-origin" });
+  } catch {
+    const message = navigator.onLine ? "无法连接到服务器，请稍后重试" : "当前网络不可用，请恢复连接后重试";
+    throw new ApiError(0, "NETWORK_ERROR", message);
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as
+      | { error?: { code?: string; message?: string } }
+      | null;
+    throw new ApiError(
+      response.status,
+      payload?.error?.code || "DOWNLOAD_FAILED",
+      payload?.error?.message || `下载失败（${response.status}）`,
+    );
+  }
+
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const filename = disposition.match(/filename="([^"]+)"/)?.[1]
+    || `health-reminder-backup-${todayInBusinessTimeZone()}.json`;
+  return { blob: await response.blob(), filename };
 }

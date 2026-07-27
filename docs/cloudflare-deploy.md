@@ -13,8 +13,8 @@
 | Git repository | `amwps290/healthreminder` |
 | Production branch | `main` |
 | Root directory | `/` |
-| Build command | `npm run build` |
-| Deploy command | `npm run deploy` |
+| Build command | `corepack pnpm run build` |
+| Deploy command | `corepack pnpm run deploy` |
 
 根目录的 `deploy` 脚本会先对 `DB` 绑定执行尚未应用的 D1 migrations，再部署 Worker 和 Web 静态资产。已执行的迁移不会重复运行。
 
@@ -36,6 +36,8 @@
 | `BARK_BASIC_AUTH_USER` | Secret，可选 | Bark Basic Auth 用户名 |
 | `BARK_BASIC_AUTH_PASSWORD` | Secret，可选 | Bark Basic Auth 密码 |
 | `BARK_BASE_URL` | Variable | 自建 Bark 服务地址 |
+| `SCHEDULER_RUN_RETENTION_DAYS` | Variable，可选 | 调度日志保留天数，默认 30 |
+| `NOTIFICATION_HISTORY_RETENTION_DAYS` | Variable，可选 | 已发送/已取消通知历史保留天数，默认 365 |
 
 Basic Auth 用户名和密码必须同时配置，未启用时两项都不要添加。
 
@@ -50,3 +52,12 @@ git push origin main
 Cloudflare Workers Builds 会自动拉取最新提交并运行构建和部署命令。可以在 Worker 的 `Deployments` 或 `Builds` 页面查看提交、D1 迁移和部署日志。
 
 部署成功后先访问 `/healthz`，确认返回 `ok`，再登录管理端测试 Bark 通知。
+
+本地提交前运行完整验证：
+
+```powershell
+corepack pnpm run verify
+```
+
+该命令严格使用两个 `pnpm-lock.yaml` 安装依赖，并依次运行 Worker/Web 类型检查、Worker 测试、
+Web 生产构建和桌面/移动 E2E。E2E 启动 Wrangler 前会自动重建 `web/dist`。

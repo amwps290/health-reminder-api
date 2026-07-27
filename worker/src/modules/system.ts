@@ -13,7 +13,8 @@ const testNotificationInput = z.object({
 
 export const systemRoutes = new Hono<AppContext>();
 
-const SCHEDULER_STALE_AFTER_MS = 5 * 60_000;
+const SCHEDULER_STALE_AFTER_MS = 3 * 60_000;
+const BARK_STALE_AFTER_MS = 7 * 86_400_000;
 
 interface SchedulerRunRow {
   started_at: string;
@@ -56,15 +57,20 @@ systemRoutes.get("/system/status", async (context) => {
       failed: number | null;
       overdue: number | null;
     }>();
-  const lastSuccessfulDelivery = await context.env.DB
-    .prepare(
-      `SELECT attempted_at
-       FROM notification_deliveries
-       WHERE success = 1
-       ORDER BY attempted_at DESC
-       LIMIT 1`,
-    )
-    .first<{ attempted_at: string }>();
+  const [lastSuccessfulDelivery, lastSuccessfulTest] = await Promise.all([
+    context.env.DB
+      .prepare(
+        `SELECT attempted_at
+         FROM notification_deliveries
+         WHERE success = 1
+         ORDER BY attempted_at DESC
+         LIMIT 1`,
+      )
+      .first<{ attempted_at: string }>(),
+    context.env.DB
+      .prepare("SELECT value FROM maintenance_state WHERE key = 'last_bark_test_success_at'")
+      .first<{ value: string }>(),
+  ]);
 
   const jobs = {
     pending: counts?.pending || 0,
@@ -74,7 +80,13 @@ systemRoutes.get("/system/status", async (context) => {
   };
   const scheduler = getSchedulerHealth(lastRun, now);
   const barkConfigured = Boolean(context.env.BARK_DEVICE_KEY);
-  const health = getOverallHealth(scheduler.state, barkConfigured, jobs);
+  const bark = getBarkHealth(
+    barkConfigured,
+    lastSuccessfulDelivery?.attempted_at || null,
+    lastSuccessfulTest?.value || null,
+    now,
+  );
+  const health = getOverallHealth(scheduler.state, bark.state, jobs);
 
   return context.json({
     data: {
@@ -89,10 +101,7 @@ systemRoutes.get("/system/status", async (context) => {
         outcome: lastRun?.outcome || null,
         errorCode: lastRun?.error_code || null,
       },
-      bark: {
-        configured: barkConfigured,
-        lastSuccessfulDeliveryAt: lastSuccessfulDelivery?.attempted_at || null,
-      },
+      bark,
       lastSchedulerRun: lastRun,
     },
   });
@@ -187,6 +196,7 @@ systemRoutes.get("/deliveries", async (context) => {
 });
 
 type SchedulerState = "healthy" | "running" | "missing" | "stale" | "failed";
+type BarkState = "healthy" | "not_configured" | "unverified" | "stale";
 
 function getSchedulerHealth(
   lastRun: SchedulerRunRow | null,
@@ -204,29 +214,78 @@ function getSchedulerHealth(
 
 function getOverallHealth(
   schedulerState: SchedulerState,
-  barkConfigured: boolean,
+  barkState: BarkState,
   jobs: { failed: number; overdue: number },
 ): { status: "healthy" | "attention" | "unavailable"; message: string } {
-  if (!barkConfigured) {
+  if (barkState === "not_configured") {
     return { status: "unavailable", message: "Bark 设备尚未配置" };
   }
   if (schedulerState === "failed") {
     return { status: "unavailable", message: "最近一次调度运行失败" };
   }
   if (schedulerState === "stale") {
-    return { status: "unavailable", message: "调度已超过 5 分钟未运行" };
+    return { status: "unavailable", message: "调度已超过 3 分钟未成功运行" };
   }
   if (schedulerState === "missing") {
     return { status: "attention", message: "调度尚未运行" };
   }
-  if (jobs.failed > 0) {
-    return { status: "attention", message: `有 ${jobs.failed} 个失败任务需要处理` };
+  if (schedulerState === "running") {
+    return { status: "attention", message: "调度正在运行，等待本次结果" };
   }
   if (jobs.overdue > 0) {
     return { status: "attention", message: `有 ${jobs.overdue} 个任务已到期但尚未处理` };
   }
-  if (schedulerState === "running") {
-    return { status: "healthy", message: "调度正在运行" };
+  if (jobs.failed > 0) {
+    return { status: "attention", message: `有 ${jobs.failed} 个失败任务需要处理` };
   }
-  return { status: "healthy", message: "调度运行正常" };
+  if (barkState === "unverified") {
+    return { status: "attention", message: "Bark 尚无成功测试或投递记录" };
+  }
+  if (barkState === "stale") {
+    return { status: "attention", message: "Bark 最近 7 天没有成功测试或投递" };
+  }
+  return { status: "healthy", message: "调度与 Bark 最近验证正常" };
+}
+
+function getBarkHealth(
+  configured: boolean,
+  deliveryAt: string | null,
+  testAt: string | null,
+  now: Date,
+): {
+  configured: boolean;
+  state: BarkState;
+  lastSuccessfulAt: string | null;
+  lastSuccessfulSource: "delivery" | "test" | null;
+} {
+  if (!configured) {
+    return {
+      configured,
+      state: "not_configured",
+      lastSuccessfulAt: null,
+      lastSuccessfulSource: null,
+    };
+  }
+  const candidates = [
+    { value: deliveryAt, source: "delivery" as const },
+    { value: testAt, source: "test" as const },
+  ].filter((candidate) => candidate.value && Number.isFinite(Date.parse(candidate.value)));
+  const latest = candidates.sort(
+    (left, right) => Date.parse(right.value!) - Date.parse(left.value!),
+  )[0];
+  if (!latest) {
+    return {
+      configured,
+      state: "unverified",
+      lastSuccessfulAt: null,
+      lastSuccessfulSource: null,
+    };
+  }
+  const stale = now.getTime() - Date.parse(latest.value!) > BARK_STALE_AFTER_MS;
+  return {
+    configured,
+    state: stale ? "stale" : "healthy",
+    lastSuccessfulAt: latest.value!,
+    lastSuccessfulSource: latest.source,
+  };
 }

@@ -42,6 +42,7 @@ export interface Injection {
   timezone: string;
   intervalDays: number;
   firstSide: InjectionSide;
+  nextSide: InjectionSide;
   enabled: boolean;
   version: number;
   materializedThrough: string | null;
@@ -138,9 +139,35 @@ export interface SystemStatus {
   };
   bark: {
     configured: boolean;
-    lastSuccessfulDeliveryAt: string | null;
+    state: "healthy" | "not_configured" | "unverified" | "stale";
+    lastSuccessfulAt: string | null;
+    lastSuccessfulSource: "delivery" | "test" | null;
   };
   lastSchedulerRun: Record<string, unknown> | null;
+}
+
+export type InjectionRecordStatus = "completed" | "skipped" | "rescheduled";
+
+export interface InjectionRecord {
+  id: string;
+  planId: string;
+  scheduledDate: string;
+  status: InjectionRecordStatus;
+  completedAt: string | null;
+  actualSide: InjectionSide | null;
+  rescheduledTo: string | null;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InjectionRecordInput {
+  scheduledDate: string;
+  status: InjectionRecordStatus;
+  completedAt: string | null;
+  actualSide: InjectionSide | null;
+  rescheduledTo: string | null;
+  notes: string;
 }
 
 export interface Delivery {

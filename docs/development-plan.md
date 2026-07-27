@@ -60,6 +60,7 @@ healthreminder/
 | `medication_schedules` | 起止日期、时区、周期类型和版本 |
 | `medication_times` | 一天内一个或多个服用时间 |
 | `injection_plans` | 注射名称、剂量、部位、间隔天数、时间和左右交替起始侧 |
+| `injection_records` | 注射计划日期、完成/跳过/改期状态、实际时间和实际左右侧 |
 | `events` | 挂号、检查、复诊和其他一次性事项 |
 | `event_reminders` | 一个事件对应的多个提醒时间 |
 | `medical_notes` | 医嘱原文、记录时间和来源 |
@@ -69,6 +70,7 @@ healthreminder/
 | `notification_jobs` | 待发送、重试、已发送或已取消的通知任务 |
 | `notification_deliveries` | Bark 请求结果和失败原因 |
 | `scheduler_runs` | Cron 运行时间及处理统计 |
+| `scheduler_daily_stats` | 清理调度明细前生成的长期按日统计 |
 
 药物周期第一版只实现 `daily`。周期和来源均保留类型及版本字段，后续增加每周指定日期、隔天、每 N 小时或新提醒来源时，不需要重写投递核心。
 
@@ -93,6 +95,8 @@ API 统一使用 `/api/v1`。首次登录时输入 `ADMIN_API_TOKEN`，Worker �
 ```text
 GET/POST/PUT/DELETE  /api/v1/medications
 GET/POST/PUT/DELETE  /api/v1/injections
+GET/POST             /api/v1/injections/:id/records
+DELETE               /api/v1/injections/:id/records/:recordId
 GET/POST/PUT/DELETE  /api/v1/events
 GET/POST/PUT/DELETE  /api/v1/medical-notes
 GET/POST/PUT/DELETE  /api/v1/questions
@@ -100,13 +104,22 @@ GET/PUT/DELETE       /api/v1/pregnancy
 GET/POST/PUT/DELETE  /api/v1/weights
 GET                  /api/v1/timeline
 GET                  /api/v1/deliveries
+GET                  /api/v1/backup/export?format=json|csv
+POST                 /api/v1/backup/validate
+POST                 /api/v1/backup/restore
 POST                 /api/v1/notifications/test
 POST                 /api/v1/notification-jobs/:id/retry
 GET                  /api/v1/system/status
 ```
 
-系统状态会综合最近一次 Cron 运行结果、调度新鲜度、失败和过期任务以及 Bark 配置返回
-`healthy`、`attention` 或 `unavailable`。失败任务可由管理员手动重新排队，历史投递记录会保留。
+系统状态只有在最近一次 Cron 于 3 分钟内成功完成、没有过期或失败任务，并且 Bark 在最近 7 天
+存在成功测试或投递时才返回 `healthy`；其余情况返回 `attention` 或 `unavailable`。Bark 成功仅表示
+服务端接受请求，不代表 APNs 已经让 iPhone 展示通知。失败任务可由管理员手动重新排队。
+
+系统页支持全量 JSON 与 CSV 导出。JSON 带格式版本和记录数量，可在恢复前校验字段、主外键和
+记录数并预览替换范围；确认后以 D1 原子批处理恢复。CSV 用于人工审阅，不用于自动恢复。备份包含
+业务数据、长期日统计、提醒任务和投递历史，但不包含 Worker Secrets、高频调度明细或内部维护状态。
+具体操作和恢复清单见 [backup-restore.md](backup-restore.md)。
 
 日志使用 request ID，并禁止输出令牌、Bark key、药名、剂量、医嘱和通知正文。
 
@@ -131,6 +144,6 @@ GET                  /api/v1/system/status
 - 服药确认和未确认升级通过扩展任务状态实现。
 - 检查报告等附件存入 R2，不直接存入 D1。
 - 未来如需原生客户端，可继续复用 `/api/v1`，无需修改调度器。
-- 数据导出、备份和审计基于现有领域表与投递记录实现。
+- 后续增加加密备份存储、自动异地归档和更细粒度的审计查询。
 
 本软件只记录和执行人工输入的医嘱，不自行推荐孕期剂量、判断药物相互作用或给出漏服后的补服建议。

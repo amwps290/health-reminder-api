@@ -43,6 +43,17 @@ export async function sendBarkTest(env: Env, message: BarkMessage): Promise<Bark
       message,
     );
   }
+  const acceptedAt = new Date().toISOString();
+  await env.DB
+    .prepare(
+      `INSERT INTO maintenance_state (key, value, updated_at)
+       VALUES ('last_bark_test_success_at', ?, ?)
+       ON CONFLICT(key) DO UPDATE SET
+         value = excluded.value,
+         updated_at = excluded.updated_at`,
+    )
+    .bind(acceptedAt, acceptedAt)
+    .run();
   return result;
 }
 

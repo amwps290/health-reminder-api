@@ -59,6 +59,14 @@ interface InjectionPlanRow {
   materialized_through: string | null;
 }
 
+interface InjectionRecordRow {
+  scheduled_date: string;
+  status: "completed" | "skipped" | "rescheduled";
+  completed_at: string | null;
+  actual_side: "left" | "right" | null;
+  rescheduled_to: string | null;
+}
+
 interface JobDraft {
   id: string;
   sourceType: "medication" | "event" | "injection";
@@ -264,17 +272,47 @@ async function materializeInjectionPlan(
     return 0;
   }
 
-  const jobs: JobDraft[] = [];
+  const { results: records } = await database
+    .prepare(
+      `SELECT scheduled_date, status, completed_at, actual_side, rescheduled_to
+       FROM injection_records WHERE plan_id = ? ORDER BY scheduled_date`,
+    )
+    .bind(plan.id)
+    .all<InjectionRecordRow>();
+  const recordsByDate = new Map(records.map((record) => [record.scheduled_date, record]));
+  const lastCompleted = records
+    .filter((record) => record.status === "completed" && record.actual_side && record.completed_at
+      && Date.parse(record.completed_at) <= now.getTime())
+    .sort((left, right) => Date.parse(right.completed_at!) - Date.parse(left.completed_at!))[0];
+  const nextSide: "left" | "right" = lastCompleted?.actual_side
+    ? oppositeSide(lastCompleted.actual_side)
+    : plan.first_side;
+  const occurrences: Array<{ scheduledDate: string; effectiveDate: string }> = [];
   for (const date of eachLocalDate(from, through)) {
     const elapsedDays = differenceInLocalDays(plan.start_date, date);
     if (elapsedDays < 0 || elapsedDays % plan.interval_days !== 0) continue;
-    const injectionNumber = elapsedDays / plan.interval_days;
-    const side = injectionNumber % 2 === 0
-      ? plan.first_side
-      : plan.first_side === "left" ? "right" : "left";
-    const scheduledAt = localDateTimeToInstant(date, plan.local_time, plan.timezone);
+    const record = recordsByDate.get(date);
+    if (record?.status === "completed" || record?.status === "skipped") continue;
+    occurrences.push({
+      scheduledDate: date,
+      effectiveDate: record?.status === "rescheduled" && record.rescheduled_to
+        ? record.rescheduled_to
+        : date,
+    });
+  }
+  for (const record of records) {
+    if (record.status !== "rescheduled" || !record.rescheduled_to) continue;
+    if (compareDates(record.scheduled_date, from) >= 0) continue;
+    if (compareDates(record.rescheduled_to, today) < 0 || compareDates(record.rescheduled_to, horizon) > 0) continue;
+    occurrences.push({ scheduledDate: record.scheduled_date, effectiveDate: record.rescheduled_to });
+  }
+  occurrences.sort((left, right) => compareDates(left.effectiveDate, right.effectiveDate));
+
+  const jobs: JobDraft[] = [];
+  for (const occurrence of occurrences) {
+    const scheduledAt = localDateTimeToInstant(occurrence.effectiveDate, plan.local_time, plan.timezone);
     if (scheduledAt.getTime() >= now.getTime()) {
-      jobs.push(createInjectionJob(plan, scheduledAt, side));
+      jobs.push(createInjectionJob(plan, scheduledAt, nextSide));
     }
   }
 

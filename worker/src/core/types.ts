@@ -10,6 +10,8 @@ export interface Env {
   BARK_DEBUG?: string;
   JOB_HORIZON_DAYS?: string;
   MAX_DELIVERY_ATTEMPTS?: string;
+  SCHEDULER_RUN_RETENTION_DAYS?: string;
+  NOTIFICATION_HISTORY_RETENTION_DAYS?: string;
 }
 
 export interface AppVariables {
@@ -29,6 +31,8 @@ export interface AppConfig {
   barkBaseUrl: string;
   horizonDays: number;
   maxDeliveryAttempts: number;
+  schedulerRunRetentionDays: number;
+  notificationHistoryRetentionDays: number;
 }
 
 export function getConfig(env: Env): AppConfig {
@@ -37,6 +41,13 @@ export function getConfig(env: Env): AppConfig {
     barkBaseUrl: (env.BARK_BASE_URL || "https://bark.191315.xyz").replace(/\/+$/, ""),
     horizonDays: parseInteger(env.JOB_HORIZON_DAYS, 30, 1, 90),
     maxDeliveryAttempts: parseInteger(env.MAX_DELIVERY_ATTEMPTS, 4, 1, 10),
+    schedulerRunRetentionDays: parseInteger(env.SCHEDULER_RUN_RETENTION_DAYS, 30, 7, 365),
+    notificationHistoryRetentionDays: parseInteger(
+      env.NOTIFICATION_HISTORY_RETENTION_DAYS,
+      365,
+      30,
+      3650,
+    ),
   };
 }
 

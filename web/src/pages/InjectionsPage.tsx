@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarRange, Clock3, MapPin, Pencil, Plus, Repeat2, Send, Syringe, Trash2 } from "lucide-react";
+import { CalendarClock, CalendarRange, CheckCircle2, Clock3, History, MapPin, Pencil, Plus, Repeat2, Send, SkipForward, Syringe, Trash2 } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { api, jsonBody } from "../api";
 import { Modal } from "../components/Modal";
@@ -7,12 +7,14 @@ import { NotificationTestFeedback } from "../components/NotificationTestFeedback
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState, ErrorNotice, LoadingView } from "../components/StateViews";
 import { TimeDialInput } from "../components/TimeDialInput";
-import type { Injection, InjectionInput, InjectionSide, NotificationTestResult } from "../types";
+import type { Injection, InjectionInput, InjectionRecord, InjectionRecordStatus, InjectionSide, NotificationTestResult } from "../types";
+import { formatDateTime, fromDateTimeInput, todayInBusinessTimeZone, toDateTimeInput } from "../utils";
 
 const sideLabels: Record<InjectionSide, string> = { left: "左侧", right: "右侧" };
 
 export function InjectionsPage() {
   const [editing, setEditing] = useState<Injection | null | "new">(null);
+  const [recording, setRecording] = useState<Injection | null>(null);
   const queryClient = useQueryClient();
   const injections = useQuery({ queryKey: ["injections"], queryFn: () => api<Injection[]>("/injections") });
   const remove = useMutation({
@@ -38,12 +40,13 @@ export function InjectionsPage() {
             </div>
             <div className="item-details">
               <div><Clock3 size={16} /><span>{item.localTime} · {formatInterval(item.intervalDays)}</span></div>
-              <div><Repeat2 size={16} /><span>首次{sideLabels[item.firstSide]}，以后每次交替</span></div>
+              <div><Repeat2 size={16} /><span>下一次预计{sideLabels[item.nextSide]}（按真实完成记录）</span></div>
               <div><MapPin size={16} /><span>{item.site || "未指定部位"}</span></div>
               <div><CalendarRange size={16} /><span>{item.startDate} 至 {item.endDate || "长期"}</span></div>
             </div>
             {item.instructions && <p className="item-note">{item.instructions}</p>}
             <div className="item-actions">
+              <button className="text-button" onClick={() => setRecording(item)}><History size={16} />执行记录</button>
               <button className="text-button" onClick={() => setEditing(item)}><Pencil size={16} />编辑</button>
               <button className="danger-text-button" onClick={() => window.confirm(`删除“${item.name}”？`) && remove.mutate(item.id)}><Trash2 size={16} />删除</button>
             </div>
@@ -51,13 +54,14 @@ export function InjectionsPage() {
         ))}
       </div>
       {editing && <InjectionModal injection={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}
+      {recording && <InjectionRecordsModal injection={recording} onClose={() => setRecording(null)} />}
     </div>
   );
 }
 
 function InjectionModal({ injection, onClose }: { injection: Injection | null; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayInBusinessTimeZone();
   const [formError, setFormError] = useState<string | null>(null);
   const [form, setForm] = useState<InjectionInput>(() => injection ? {
     name: injection.name,
@@ -159,6 +163,145 @@ function InjectionModal({ injection, onClose }: { injection: Injection | null; o
       </form>
     </Modal>
   );
+}
+
+interface RecordForm {
+  scheduledDate: string;
+  status: InjectionRecordStatus;
+  completedAt: string;
+  actualSide: InjectionSide;
+  rescheduledTo: string;
+  notes: string;
+}
+
+function InjectionRecordsModal({ injection, onClose }: { injection: Injection; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const records = useQuery({
+    queryKey: ["injection-records", injection.id],
+    queryFn: () => api<InjectionRecord[]>(`/injections/${injection.id}/records`),
+  });
+  const [form, setForm] = useState<RecordForm>(() => emptyRecordForm(injection));
+  const save = useMutation({
+    mutationFn: () => api<InjectionRecord>(`/injections/${injection.id}/records`, {
+      method: "POST",
+      ...jsonBody({
+        scheduledDate: form.scheduledDate,
+        status: form.status,
+        completedAt: form.status === "completed" ? fromDateTimeInput(form.completedAt) : null,
+        actualSide: form.status === "completed" ? form.actualSide : null,
+        rescheduledTo: form.status === "rescheduled" ? form.rescheduledTo : null,
+        notes: form.notes,
+      }),
+    }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["injection-records", injection.id] }),
+        refresh(queryClient),
+      ]);
+      const current = await api<Injection>(`/injections/${injection.id}`);
+      setForm(emptyRecordForm(current));
+    },
+  });
+  const remove = useMutation({
+    mutationFn: (recordId: string) => api(`/injections/${injection.id}/records/${recordId}`, { method: "DELETE" }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["injection-records", injection.id] }),
+        refresh(queryClient),
+      ]);
+    },
+  });
+
+  function editRecord(record: InjectionRecord): void {
+    setForm({
+      scheduledDate: record.scheduledDate,
+      status: record.status,
+      completedAt: record.completedAt ? toDateTimeInput(record.completedAt) : toDateTimeInput(new Date().toISOString()),
+      actualSide: record.actualSide || injection.nextSide,
+      rescheduledTo: record.rescheduledTo || record.scheduledDate,
+      notes: record.notes,
+    });
+  }
+
+  return (
+    <Modal title={`${injection.name} · 执行记录`} onClose={onClose}>
+      <form className="form-stack" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
+        {save.isError && <ErrorNotice message={save.error.message} />}
+        {remove.isError && <ErrorNotice message={remove.error.message} />}
+        {save.isSuccess && <div className="success-notice" role="status"><CheckCircle2 size={18} />执行记录已保存，后续侧别已重新计算</div>}
+        <div className="field-group">
+          <span>执行结果</span>
+          <div className="segmented-control record-status-control" role="group" aria-label="执行结果">
+            <button type="button" className={form.status === "completed" ? "active" : ""} aria-pressed={form.status === "completed"} onClick={() => setForm({ ...form, status: "completed" })}><CheckCircle2 size={16} />已完成</button>
+            <button type="button" className={form.status === "skipped" ? "active" : ""} aria-pressed={form.status === "skipped"} onClick={() => setForm({ ...form, status: "skipped" })}><SkipForward size={16} />已跳过</button>
+            <button type="button" className={form.status === "rescheduled" ? "active" : ""} aria-pressed={form.status === "rescheduled"} onClick={() => setForm({ ...form, status: "rescheduled" })}><CalendarClock size={16} />已改期</button>
+          </div>
+        </div>
+        <div className="form-grid two-columns">
+          <Field label="原计划日期"><input type="date" value={form.scheduledDate} onChange={(event) => setForm({ ...form, scheduledDate: event.target.value })} required /></Field>
+          {form.status === "rescheduled" ? (
+            <Field label="改期到"><input type="date" value={form.rescheduledTo} onChange={(event) => setForm({ ...form, rescheduledTo: event.target.value })} required /></Field>
+          ) : form.status === "completed" ? (
+            <Field label="实际完成时间"><input type="datetime-local" value={form.completedAt} onChange={(event) => setForm({ ...form, completedAt: event.target.value })} required /></Field>
+          ) : <div />}
+        </div>
+        {form.status === "completed" && (
+          <div className="field-group">
+            <span>实际注射侧别</span>
+            <div className="segmented-control side-control" role="group" aria-label="实际注射侧别">
+              {(["left", "right"] as const).map((side) => (
+                <button type="button" key={side} className={form.actualSide === side ? "active" : ""} aria-pressed={form.actualSide === side} onClick={() => setForm({ ...form, actualSide: side })}>{sideLabels[side]}</button>
+              ))}
+            </div>
+          </div>
+        )}
+        <Field label="备注"><textarea rows={2} maxLength={1000} value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="可记录实际部位、剂量或异常情况" /></Field>
+        <div className="form-actions">
+          <button type="button" className="secondary-button" onClick={onClose}>关闭</button>
+          <button type="submit" className="primary-button" disabled={save.isPending}>{save.isPending ? "保存中" : "保存记录"}</button>
+        </div>
+      </form>
+
+      <section className="injection-history" aria-labelledby="injection-history-title">
+        <div className="section-heading"><h2 id="injection-history-title">最近记录</h2><span>{records.data?.length ?? 0} 条</span></div>
+        {records.isPending && <LoadingView />}
+        {records.isError && <ErrorNotice message={records.error.message} />}
+        {records.data?.length === 0 && <EmptyState title="还没有执行记录" />}
+        <div className="injection-history-list">
+          {records.data?.map((record) => (
+            <div className="injection-history-row" key={record.id}>
+              <div>
+                <strong>{record.scheduledDate} · {recordStatusLabel(record)}</strong>
+                <span>{record.completedAt ? formatDateTime(record.completedAt) : record.rescheduledTo ? `改到 ${record.rescheduledTo}` : record.notes || "未填写备注"}</span>
+              </div>
+              <div className="compact-actions">
+                <button type="button" className="icon-button" aria-label={`编辑 ${record.scheduledDate} 执行记录`} onClick={() => editRecord(record)}><Pencil size={16} /></button>
+                <button type="button" className="icon-button danger" aria-label={`删除 ${record.scheduledDate} 执行记录`} onClick={() => window.confirm("删除这条执行记录？") && remove.mutate(record.id)}><Trash2 size={16} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </Modal>
+  );
+}
+
+function emptyRecordForm(injection: Injection): RecordForm {
+  const today = todayInBusinessTimeZone();
+  return {
+    scheduledDate: today,
+    status: "completed",
+    completedAt: toDateTimeInput(new Date().toISOString()),
+    actualSide: injection.nextSide,
+    rescheduledTo: today,
+    notes: "",
+  };
+}
+
+function recordStatusLabel(record: InjectionRecord): string {
+  if (record.status === "completed") return `已完成 · ${sideLabels[record.actualSide!]}`;
+  if (record.status === "rescheduled") return "已改期";
+  return "已跳过";
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {

@@ -8,6 +8,7 @@ import { PageHeader } from "../components/PageHeader";
 import { EmptyState, ErrorNotice, LoadingView } from "../components/StateViews";
 import { TimeDialInput } from "../components/TimeDialInput";
 import type { Medication, MedicationInput, NotificationTestResult } from "../types";
+import { todayInBusinessTimeZone } from "../utils";
 
 export function MedicationsPage() {
   const [editing, setEditing] = useState<Medication | null | "new">(null);
@@ -53,7 +54,7 @@ export function MedicationsPage() {
 
 function MedicationModal({ medication, onClose }: { medication: Medication | null; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayInBusinessTimeZone();
   const [formError, setFormError] = useState<string | null>(null);
   const [form, setForm] = useState<MedicationInput>(() => medication ? {
     name: medication.name,

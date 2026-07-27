@@ -19,6 +19,10 @@ describe("system health and recovery", () => {
       )
       .bind(now, now)
       .run();
+    await env.DB
+      .prepare("INSERT INTO maintenance_state (key, value, updated_at) VALUES ('last_bark_test_success_at', ?, ?)")
+      .bind(now, now)
+      .run();
 
     const response = await request("/api/v1/system/status");
     expect(response.status).toBe(200);
@@ -27,15 +31,15 @@ describe("system health and recovery", () => {
         status: string;
         statusMessage: string;
         scheduler: { state: string; outcome: string };
-        bark: { configured: boolean };
+        bark: { configured: boolean; state: string };
         jobs: { overdue: number };
       };
     };
     expect(body.data).toMatchObject({
       status: "healthy",
-      statusMessage: "调度运行正常",
+      statusMessage: "调度与 Bark 最近验证正常",
       scheduler: { state: "healthy", outcome: "success" },
-      bark: { configured: true },
+      bark: { configured: true, state: "healthy" },
       jobs: { overdue: 0 },
     });
   });
@@ -62,7 +66,7 @@ describe("system health and recovery", () => {
     });
   });
 
-  it("keeps a current scheduler run healthy while it is in progress", async () => {
+  it("reports a current scheduler run as pending until it finishes", async () => {
     const now = new Date().toISOString();
     await env.DB
       .prepare(
@@ -78,8 +82,8 @@ describe("system health and recovery", () => {
       data: { status: string; statusMessage: string; scheduler: { state: string } };
     };
     expect(body.data).toMatchObject({
-      status: "healthy",
-      statusMessage: "调度正在运行",
+      status: "attention",
+      statusMessage: "调度正在运行，等待本次结果",
       scheduler: { state: "running" },
     });
   });

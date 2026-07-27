@@ -7,7 +7,7 @@ import { PageHeader } from "../components/PageHeader";
 import { EmptyState, ErrorNotice, LoadingView } from "../components/StateViews";
 import { StatusBadge } from "../components/StatusBadge";
 import type { PregnancyStatus, SystemStatus, TimelineJob } from "../types";
-import { formatDateTime } from "../utils";
+import { addDateDays, BUSINESS_TIME_ZONE, formatDateTime, fromDateTimeInput, todayInBusinessTimeZone } from "../utils";
 
 export function DashboardPage() {
   const [pregnancyEditorOpen, setPregnancyEditorOpen] = useState(false);
@@ -38,7 +38,7 @@ export function DashboardPage() {
     <div className="page-container">
       <PageHeader
         title="今日"
-        subtitle={new Intl.DateTimeFormat("zh-CN", { dateStyle: "full" }).format(new Date())}
+        subtitle={new Intl.DateTimeFormat("zh-CN", { dateStyle: "full", timeZone: BUSINESS_TIME_ZONE }).format(new Date())}
         actions={
           <button className="secondary-button" aria-label="测试 Bark" title="测试 Bark" onClick={() => testPush.mutate()} disabled={testPush.isPending}>
             <Send size={17} /><span>{testPush.isPending ? "发送中" : "测试 Bark"}</span>
@@ -124,7 +124,7 @@ function PregnancyCard({ pregnancy, loading, onEdit }: { pregnancy?: PregnancySt
 
 function PregnancyModal({ pregnancy, onClose }: { pregnancy?: PregnancyStatus; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const today = pregnancy?.today ?? new Date().toISOString().slice(0, 10);
+  const today = pregnancy?.today ?? todayInBusinessTimeZone();
   const [formError, setFormError] = useState<string | null>(null);
   const [form, setForm] = useState(() => ({
     calibratedOn: today,
@@ -223,10 +223,10 @@ function diffDays(from: string, to: string): number {
 }
 
 function getTodayRange() {
-  const from = new Date();
-  from.setHours(0, 0, 0, 0);
-  const to = new Date(from);
-  to.setDate(to.getDate() + 1);
-  to.setMilliseconds(-1);
-  return { from: from.toISOString(), to: to.toISOString() };
+  const today = todayInBusinessTimeZone();
+  const nextMidnight = fromDateTimeInput(`${addDateDays(today, 1)}T00:00`);
+  return {
+    from: fromDateTimeInput(`${today}T00:00`),
+    to: new Date(Date.parse(nextMidnight) - 1).toISOString(),
+  };
 }

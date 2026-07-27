@@ -6,8 +6,8 @@ export default defineConfig({
   workers: 1,
   reporter: "list",
   webServer: {
-    command: "node_modules\\.bin\\wrangler.cmd dev --port 8787",
-    cwd: "../worker",
+    command: "corepack pnpm run dev:e2e",
+    cwd: "..",
     url: "http://127.0.0.1:8787/healthz",
     reuseExistingServer: true,
     timeout: 60_000,
@@ -15,10 +15,6 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:8787",
     trace: "retain-on-failure",
-    launchOptions: {
-      executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-      args: ["--disable-gpu", "--disable-dev-shm-usage"],
-    },
   },
   projects: [
     { name: "desktop", use: { browserName: "chromium", viewport: { width: 1440, height: 1000 } } },

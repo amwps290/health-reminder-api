@@ -108,7 +108,7 @@ describe("health reminder API", () => {
     expect(timelineBody.data.some((item) => item.source_type === "event")).toBe(true);
   });
 
-  it("creates an injection plan with interval scheduling and alternating sides", async () => {
+  it("creates injection jobs and recalculates sides from actual completion records", async () => {
     const tomorrow = addLocalDays(dateInTimeZone(new Date(), "Asia/Shanghai"), 1);
     const created = await request("/api/v1/injections", {
       method: "POST",
@@ -139,7 +139,7 @@ describe("health reminder API", () => {
     expect(jobs.results).toHaveLength(3);
     expect(jobs.results.map((job) => job.body)).toEqual([
       expect.stringContaining("腹部左侧"),
-      expect.stringContaining("腹部右侧"),
+      expect.stringContaining("腹部左侧"),
       expect.stringContaining("腹部左侧"),
     ]);
 
@@ -172,6 +172,56 @@ describe("health reminder API", () => {
       .all<{ status: string; count: number }>();
     expect(statuses.results.find((row) => row.status === "canceled")?.count).toBe(3);
     expect(statuses.results.find((row) => row.status === "pending")?.count).toBe(3);
+
+    const completed = await request(`/api/v1/injections/${injection.id}/records`, {
+      method: "POST",
+      body: JSON.stringify({
+        scheduledDate: tomorrow,
+        status: "completed",
+        completedAt: new Date().toISOString(),
+        actualSide: "left",
+        rescheduledTo: null,
+        notes: "实际使用左侧",
+      }),
+    });
+    expect(completed.status).toBe(201);
+    const recalculated = await env.DB
+      .prepare(
+        `SELECT body FROM notification_jobs
+         WHERE source_type = 'injection' AND source_version = 3 AND status = 'pending'
+         ORDER BY scheduled_at`,
+      )
+      .all<{ body: string }>();
+    expect(recalculated.results.map((job) => job.body)).toEqual([
+      expect.stringContaining("腹部右侧"),
+      expect.stringContaining("腹部左侧"),
+    ]);
+
+    const skippedDate = addLocalDays(tomorrow, 1);
+    const skipped = await request(`/api/v1/injections/${injection.id}/records`, {
+      method: "POST",
+      body: JSON.stringify({
+        scheduledDate: skippedDate,
+        status: "skipped",
+        completedAt: null,
+        actualSide: null,
+        rescheduledTo: null,
+        notes: "遵医嘱跳过",
+      }),
+    });
+    expect(skipped.status).toBe(201);
+    const afterSkip = await env.DB
+      .prepare(
+        `SELECT body FROM notification_jobs
+         WHERE source_type = 'injection' AND source_version = 4 AND status = 'pending'
+         ORDER BY scheduled_at`,
+      )
+      .all<{ body: string }>();
+    expect(afterSkip.results).toHaveLength(1);
+    expect(afterSkip.results[0]?.body).toContain("腹部右侧");
+
+    const records = await request(`/api/v1/injections/${injection.id}/records`);
+    expect((await records.json() as { data: unknown[] }).data).toHaveLength(2);
   });
 
   it("calibrates and calculates pregnancy week", async () => {

@@ -2,6 +2,7 @@ import { getConfig, type Env } from "../core/types";
 import { BarkChannel } from "../integrations/bark";
 import { dispatchDueJobs } from "./dispatch";
 import { topUpInjectionJobs, topUpMedicationJobs } from "./materialize";
+import { cleanupOldRecords, type RetentionSummary } from "./retention";
 
 export interface SchedulerSummary {
   materialized: number;
@@ -32,6 +33,16 @@ export async function runScheduler(env: Env, now = new Date()): Promise<Schedule
       now,
       config.maxDeliveryAttempts,
     );
+    let retention: RetentionSummary | null = null;
+    try {
+      retention = await cleanupOldRecords(env.DB, now, config);
+    } catch (error) {
+      console.error(JSON.stringify({
+        event: "retention_cleanup_failed",
+        runId,
+        errorCode: error instanceof Error ? error.name : "UNKNOWN_ERROR",
+      }));
+    }
     const finishedAt = new Date().toISOString();
     await env.DB
       .prepare(
@@ -54,6 +65,7 @@ export async function runScheduler(env: Env, now = new Date()): Promise<Schedule
       event: "scheduler_complete",
       runId,
       materialized,
+      retention,
       ...dispatched,
     }));
     return { materialized, ...dispatched };

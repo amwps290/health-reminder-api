@@ -4,10 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "npm --prefix web install && npm --prefix worker install && npm --prefix web run build",
-    "deploy": "npm --prefix worker exec -- wrangler d1 migrations apply DB --remote --config wrangler.jsonc && npm --prefix worker exec -- wrangler deploy --config wrangler.jsonc",
-    "typecheck": "npm --prefix worker run typecheck && npm --prefix web run typecheck"
+    "install:frozen": "corepack pnpm --dir worker install --frozen-lockfile --ignore-workspace && corepack pnpm --dir web install --frozen-lockfile --ignore-workspace",
+    "build:web": "corepack pnpm --dir web run build",
+    "build": "corepack pnpm run install:frozen && corepack pnpm run build:web",
+    "deploy": "corepack pnpm --dir worker exec wrangler d1 migrations apply DB --remote --config wrangler.jsonc && corepack pnpm --dir worker exec wrangler deploy --config wrangler.jsonc",
+    "typecheck": "corepack pnpm --dir worker run typecheck && corepack pnpm --dir web run typecheck",
+    "test:worker": "corepack pnpm --dir worker run test",
+    "dev:e2e": "corepack pnpm run build:web && corepack pnpm --dir worker exec wrangler dev --port 8787",
+    "test:e2e": "corepack pnpm --dir web run test:e2e",
+    "verify": "corepack pnpm run install:frozen && corepack pnpm run typecheck && corepack pnpm run test:worker && corepack pnpm run build:web && corepack pnpm run test:e2e"
   },
+  "packageManager": "pnpm@10.14.0",
   "cloudflare": {
     "bindings": {
       "ADMIN_API_TOKEN": {

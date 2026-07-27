@@ -1,5 +1,6 @@
 import { Check, Clock3, Minus, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
+import { todayInBusinessTimeZone } from "../utils";
 
 type ClockMode = "hour" | "minute";
 
@@ -141,10 +142,8 @@ function parseTime(value: string): { hour: number; minute: number } {
 }
 
 function splitDateTime(value: string): { date: string; time: string } {
-  const now = new Date();
-  const fallbackDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
   return {
-    date: value.slice(0, 10) || fallbackDate,
+    date: value.slice(0, 10) || todayInBusinessTimeZone(),
     time: value.slice(11, 16) || "08:00",
   };
 }
