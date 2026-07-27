@@ -33,18 +33,23 @@ test("creates and removes a medication plan", async ({ page }, testInfo) => {
   const name = `页面测试-${testInfo.project.name}`;
   const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
   await page.getByLabel("名称").fill(name);
-  await page.getByLabel("单次剂量").fill("1 片");
+  await page.getByLabel("默认单次剂量").fill("1 片");
   await page.getByLabel("服用说明").fill("饭后服用");
   await page.locator(".modal-backdrop").click({ position: { x: 4, y: 4 } });
   await expect(page.getByRole("dialog", { name: "新增服药计划" })).toBeVisible();
   await page.getByLabel("开始日期").fill(tomorrow);
-  await page.getByRole("button", { name: "每日时间 1" }).click();
+  await page.getByLabel("服药周期").selectOption("interval_days");
+  await page.getByLabel("间隔天数").fill("3");
+  await page.getByRole("button", { name: "服用时间 1" }).click();
   await page.getByRole("button", { name: "09" }).click();
   await page.getByRole("button", { name: "30" }).click();
   await page.getByRole("button", { name: "完成" }).click();
+  await page.getByLabel("服用时间 1 的剂量").fill("2 片");
   await page.getByRole("button", { name: "保存" }).click();
   const card = page.getByRole("article").filter({ hasText: name });
   await expect(card.getByRole("heading", { name })).toBeVisible();
+  await expect(card).toContainText("每隔 3 天");
+  await expect(card).toContainText("09:30 2 片");
 
   await card.getByRole("button", { name: "服用记录" }).click();
   const recordDialog = page.getByRole("dialog", { name: `${name} · 服用记录` });

@@ -209,6 +209,16 @@ a { color: inherit; }
 .time-list { display: flex; flex-wrap: wrap; gap: 9px; }
 .time-input-row { display: grid; grid-template-columns: minmax(132px, 1fr) 44px; align-items: start; gap: 5px; flex: 1 1 196px; }
 .time-input-row.wide { grid-template-columns: minmax(220px, 1fr) 44px; flex: 1 1 288px; }
+.medication-slot-list { display: flex; flex-direction: column; gap: 8px; }
+.medication-slot-heading, .medication-slot-row { display: grid; grid-template-columns: minmax(132px, .75fr) minmax(160px, 1.25fr) 44px; gap: 8px; align-items: center; }
+.medication-slot-heading { padding-bottom: 1px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.medication-slot-row input { width: 100%; min-width: 0; min-height: 42px; padding: 9px 11px; color: #1d2926; background: #fff; border: 1px solid #cbd6d2; border-radius: 6px; font-weight: 400; }
+.medication-slot-row input:focus { border-color: #25836d; box-shadow: 0 0 0 3px rgba(37, 131, 109, .12); outline: 0; }
+.cycle-inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.weekday-control { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.weekday-control button { min-width: 0; min-height: 40px; padding: 0; color: #53645f; background: #fff; border: 1px solid #cbd6d2; border-radius: 6px; }
+.weekday-control button:hover { background: #edf2f0; }
+.weekday-control button.active { color: #fff; background: var(--primary); border-color: var(--primary); font-weight: 650; }
 .toggle-row { display: inline-flex; align-items: center; gap: 9px; color: #33433f; font-size: 13px; font-weight: 600; }
 .toggle-row input { width: 18px; height: 18px; accent-color: var(--primary); }
 .form-actions { display: flex; justify-content: flex-end; gap: 9px; padding-top: 5px; }
@@ -397,6 +407,12 @@ a { color: inherit; }
   .split-actions > div .secondary-button, .split-actions > div .primary-button { flex: 1; }
   .date-time-dial { grid-template-columns: 1fr; }
   .time-input-row.wide { grid-template-columns: minmax(0, 1fr) 44px; flex-basis: 100%; }
+  .medication-slot-heading { display: none; }
+  .medication-slot-row { grid-template-columns: minmax(0, 1fr) 44px; }
+  .medication-slot-row > :first-child { grid-column: 1; }
+  .medication-slot-row > input { grid-column: 1; }
+  .medication-slot-row > button { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+  .weekday-control { gap: 4px; }
   .record-status-control { grid-template-columns: 1fr; }
   .injection-history { margin-inline: -16px; }
   .time-dial-panel { width: min(300px, calc(100vw - 48px)); }

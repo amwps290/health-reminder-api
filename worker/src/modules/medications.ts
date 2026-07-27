@@ -12,6 +12,11 @@ import {
 import { regenerateMedicationJobs } from "../scheduler/materialize";
 import { medicationMessage } from "../scheduler/messages";
 
+const medicationSlotInput = z.object({
+  time: z.string().refine(isTimeString, "必须是 HH:mm 时间"),
+  dose: z.string().trim().max(120).default(""),
+});
+
 const medicationInput = z
   .object({
     name: z.string().trim().min(1).max(120),
@@ -19,16 +24,38 @@ const medicationInput = z
     instructions: z.string().trim().max(1000).default(""),
     startDate: z.string().refine(isDateString, "必须是 YYYY-MM-DD 日期"),
     endDate: z.string().refine(isDateString, "必须是 YYYY-MM-DD 日期").nullable().default(null),
-    times: z
-      .array(z.string().refine(isTimeString, "必须是 HH:mm 时间"))
-      .min(1)
-      .max(12)
-      .refine((values) => new Set(values).size === values.length, "服用时间不能重复"),
+    scheduleType: z.enum(["daily", "interval_days", "weekly", "cycle"]).default("daily"),
+    intervalDays: z.number().int().min(1).max(365).default(2),
+    weekdays: z.array(z.number().int().min(0).max(6)).min(1).max(7).default([1, 2, 3, 4, 5]),
+    activeDays: z.number().int().min(1).max(365).default(21),
+    restDays: z.number().int().min(0).max(365).default(7),
+    slots: z.array(medicationSlotInput).min(1).max(12).optional(),
+    times: z.array(z.string().refine(isTimeString, "必须是 HH:mm 时间")).min(1).max(12).optional(),
     enabled: z.boolean().default(true),
   })
-  .refine((value) => !value.endDate || value.endDate >= value.startDate, {
-    message: "结束日期不能早于开始日期",
-    path: ["endDate"],
+  .superRefine((value, context) => {
+    if (value.endDate && value.endDate < value.startDate) {
+      context.addIssue({ code: "custom", message: "结束日期不能早于开始日期", path: ["endDate"] });
+    }
+    const slots = value.slots ?? value.times?.map((time) => ({ time, dose: "" })) ?? [];
+    if (slots.length === 0) {
+      context.addIssue({ code: "custom", message: "至少需要一个服用时间", path: ["slots"] });
+    }
+    if (new Set(slots.map((slot) => slot.time)).size !== slots.length) {
+      context.addIssue({ code: "custom", message: "服用时间不能重复", path: ["slots"] });
+    }
+    if (value.scheduleType === "weekly" && value.weekdays.length === 0) {
+      context.addIssue({ code: "custom", message: "每周计划至少选择一天", path: ["weekdays"] });
+    }
+    if (value.scheduleType === "cycle" && value.restDays < 1) {
+      context.addIssue({ code: "custom", message: "停药天数至少为 1 天", path: ["restDays"] });
+    }
+  })
+  .transform(({ slots, times, ...value }) => {
+    return {
+      ...value,
+      slots: slots ?? times!.map((time) => ({ time, dose: "" })),
+    };
   });
 
 type MedicationInput = z.infer<typeof medicationInput>;
@@ -55,16 +82,21 @@ interface MedicationRow {
   created_at: string;
   updated_at: string;
   schedule_id: string;
-  schedule_type: string;
+  schedule_type: "daily" | "interval_days" | "weekly" | "cycle";
   timezone: string;
   start_date: string;
   end_date: string | null;
+  interval_days: number;
+  weekdays: number;
+  active_days: number;
+  rest_days: number;
   version: number;
   materialized_through: string | null;
 }
 
 interface TimeRow {
   local_time: string;
+  dose: string;
 }
 
 interface MedicationRecordRow {
@@ -84,7 +116,7 @@ export const medicationRoutes = new Hono<AppContext>();
 
 medicationRoutes.post("/test-notification", async (context) => {
   const input = await parseJson(context, medicationInput);
-  const message = medicationMessage(input);
+  const message = medicationMessage({ ...input, dose: input.slots[0]?.dose || input.dose });
   const result = await sendBarkTest(context.env, message);
   return context.json({ data: { accepted: true, title: message.title, body: message.body, ...result } });
 });
@@ -94,6 +126,7 @@ medicationRoutes.get("/", async (context) => {
     .prepare(
       `SELECT m.id, m.name, m.dose, m.instructions, m.enabled, m.created_at, m.updated_at,
               s.id AS schedule_id, s.schedule_type, s.timezone, s.start_date, s.end_date,
+              s.interval_days, s.weekdays, s.active_days, s.rest_days,
               s.version, s.materialized_through
        FROM medications m
        JOIN medication_schedules s ON s.medication_id = m.id
@@ -207,7 +240,7 @@ medicationRoutes.put("/:id", async (context) => {
   const existing = await getMedicationRow(context.env.DB, id);
   const now = new Date();
   const timestamp = now.toISOString();
-  const times = [...input.times].sort();
+  const slots = [...input.slots].sort((left, right) => left.time.localeCompare(right.time));
   await context.env.DB.batch([
     context.env.DB
       .prepare(
@@ -219,20 +252,31 @@ medicationRoutes.put("/:id", async (context) => {
     context.env.DB
       .prepare(
         `UPDATE medication_schedules
-         SET start_date = ?, end_date = ?, version = version + 1,
+         SET schedule_type = ?, start_date = ?, end_date = ?, interval_days = ?,
+             weekdays = ?, active_days = ?, rest_days = ?, version = version + 1,
              materialized_through = NULL, updated_at = ?
          WHERE id = ?`,
       )
-      .bind(input.startDate, input.endDate, timestamp, existing.schedule_id),
+      .bind(
+        input.scheduleType,
+        input.startDate,
+        input.endDate,
+        input.intervalDays,
+        weekdaysToMask(input.weekdays),
+        input.activeDays,
+        input.restDays,
+        timestamp,
+        existing.schedule_id,
+      ),
     context.env.DB
       .prepare("DELETE FROM medication_times WHERE schedule_id = ?")
       .bind(existing.schedule_id),
-    ...times.map((time, index) =>
+    ...slots.map((slot, index) =>
       context.env.DB
         .prepare(
-          "INSERT INTO medication_times (id, schedule_id, local_time, sort_order) VALUES (?, ?, ?, ?)",
+          "INSERT INTO medication_times (id, schedule_id, local_time, dose, sort_order) VALUES (?, ?, ?, ?, ?)",
         )
-        .bind(crypto.randomUUID(), existing.schedule_id, time, index),
+        .bind(crypto.randomUUID(), existing.schedule_id, slot.time, slot.dose, index),
     ),
   ]);
   await regenerateMedicationJobs(context.env.DB, id, now, getConfig(context.env));
@@ -286,24 +330,29 @@ async function insertMedication(
       .prepare(
         `INSERT INTO medication_schedules (
            id, medication_id, schedule_type, timezone, start_date, end_date,
-           version, created_at, updated_at
-         ) VALUES (?, ?, 'daily', ?, ?, ?, 1, ?, ?)`,
+           interval_days, weekdays, active_days, rest_days, version, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
       )
       .bind(
         scheduleId,
         medicationId,
+        input.scheduleType,
         "Asia/Shanghai",
         input.startDate,
         input.endDate,
+        input.intervalDays,
+        weekdaysToMask(input.weekdays),
+        input.activeDays,
+        input.restDays,
         timestamp,
         timestamp,
       ),
-    ...[...input.times].sort().map((time, index) =>
+    ...[...input.slots].sort((left, right) => left.time.localeCompare(right.time)).map((slot, index) =>
       database
         .prepare(
-          "INSERT INTO medication_times (id, schedule_id, local_time, sort_order) VALUES (?, ?, ?, ?)",
+          "INSERT INTO medication_times (id, schedule_id, local_time, dose, sort_order) VALUES (?, ?, ?, ?, ?)",
         )
-        .bind(crypto.randomUUID(), scheduleId, time, index),
+        .bind(crypto.randomUUID(), scheduleId, slot.time, slot.dose, index),
     ),
   ];
   try {
@@ -325,6 +374,7 @@ async function getMedicationRow(database: D1Database, id: string): Promise<Medic
     .prepare(
       `SELECT m.id, m.name, m.dose, m.instructions, m.enabled, m.created_at, m.updated_at,
               s.id AS schedule_id, s.schedule_type, s.timezone, s.start_date, s.end_date,
+              s.interval_days, s.weekdays, s.active_days, s.rest_days,
               s.version, s.materialized_through
        FROM medications m
        JOIN medication_schedules s ON s.medication_id = m.id
@@ -338,7 +388,7 @@ async function getMedicationRow(database: D1Database, id: string): Promise<Medic
 
 async function serializeMedication(database: D1Database, row: MedicationRow) {
   const { results } = await database
-    .prepare("SELECT local_time FROM medication_times WHERE schedule_id = ? ORDER BY sort_order, local_time")
+    .prepare("SELECT local_time, dose FROM medication_times WHERE schedule_id = ? ORDER BY sort_order, local_time")
     .bind(row.schedule_id)
     .all<TimeRow>();
   return {
@@ -353,7 +403,12 @@ async function serializeMedication(database: D1Database, row: MedicationRow) {
       timezone: row.timezone,
       startDate: row.start_date,
       endDate: row.end_date,
+      intervalDays: row.interval_days,
+      weekdays: maskToWeekdays(row.weekdays),
+      activeDays: row.active_days,
+      restDays: row.rest_days,
       times: results.map((item) => item.local_time),
+      slots: results.map((item) => ({ time: item.local_time, dose: item.dose })),
       version: row.version,
       materializedThrough: row.materialized_through,
     },
@@ -375,6 +430,14 @@ async function cancelMedicationJobs(
     )
     .bind(timestamp, scheduleId)
     .run();
+}
+
+function weekdaysToMask(weekdays: number[]): number {
+  return weekdays.reduce((mask, weekday) => mask | (1 << weekday), 0);
+}
+
+function maskToWeekdays(mask: number): number[] {
+  return [0, 1, 2, 3, 4, 5, 6].filter((weekday) => (mask & (1 << weekday)) !== 0);
 }
 
 function serializeMedicationRecord(row: MedicationRecordRow) {

@@ -172,6 +172,87 @@ describe("health reminder API", () => {
     });
   });
 
+  it("materializes medication recurrence rules and per-time doses", async () => {
+    const tomorrow = addLocalDays(dateInTimeZone(new Date(), "Asia/Shanghai"), 1);
+    const endDate = addLocalDays(tomorrow, 6);
+    const weekday = new Date(`${tomorrow}T00:00:00Z`).getUTCDay();
+    const cases = [
+      {
+        name: "weekly",
+        scheduleType: "weekly",
+        weekdays: [weekday],
+        intervalDays: 2,
+        activeDays: 21,
+        restDays: 7,
+        slots: [{ time: "08:00", dose: "" }, { time: "20:00", dose: "2 片" }],
+        expectedJobs: 2,
+      },
+      {
+        name: "interval",
+        scheduleType: "interval_days",
+        weekdays: [1],
+        intervalDays: 3,
+        activeDays: 21,
+        restDays: 7,
+        slots: [{ time: "09:00", dose: "" }],
+        expectedJobs: 3,
+      },
+      {
+        name: "cycle",
+        scheduleType: "cycle",
+        weekdays: [1],
+        intervalDays: 2,
+        activeDays: 2,
+        restDays: 2,
+        slots: [{ time: "10:00", dose: "" }],
+        expectedJobs: 4,
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      const response = await request("/api/v1/medications", {
+        method: "POST",
+        body: JSON.stringify({
+          name: testCase.name,
+          dose: "1 片",
+          instructions: "饭后",
+          startDate: tomorrow,
+          endDate,
+          scheduleType: testCase.scheduleType,
+          weekdays: testCase.weekdays,
+          intervalDays: testCase.intervalDays,
+          activeDays: testCase.activeDays,
+          restDays: testCase.restDays,
+          slots: testCase.slots,
+          enabled: true,
+        }),
+      });
+      expect(response.status).toBe(201);
+      const medication = (await response.json() as {
+        data: {
+          schedule: {
+            id: string;
+            type: string;
+            slots: Array<{ time: string; dose: string }>;
+          };
+        };
+      }).data;
+      expect(medication.schedule.type).toBe(testCase.scheduleType);
+      expect(medication.schedule.slots).toEqual(testCase.slots);
+      const jobs = await env.DB
+        .prepare("SELECT body FROM notification_jobs WHERE source_type = 'medication' AND source_id = ? AND status = 'pending' ORDER BY scheduled_at")
+        .bind(medication.schedule.id)
+        .all<{ body: string }>();
+      expect(jobs.results).toHaveLength(testCase.expectedJobs);
+      if (testCase.name === "weekly") {
+        expect(jobs.results.map((job) => job.body)).toEqual([
+          expect.stringContaining("1 片"),
+          expect.stringContaining("2 片"),
+        ]);
+      }
+    }
+  });
+
   it("creates an event, note and linked question", async () => {
     const eventAt = new Date(Date.now() + 3 * 86_400_000).toISOString();
     const remindAt = new Date(Date.now() + 86_400_000).toISOString();

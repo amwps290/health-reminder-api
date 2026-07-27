@@ -4,7 +4,7 @@ import type { AppContext } from "../core/types";
 import { getConfig } from "../core/types";
 
 const BACKUP_FORMAT = "health-reminder-backup";
-const BACKUP_VERSION = 3;
+const BACKUP_VERSION = 4;
 const MAX_BACKUP_BYTES = 5_000_000;
 
 type DatabaseValue = string | number | null;
@@ -33,8 +33,8 @@ const TABLES: readonly TableDefinition[] = [
   table("profiles", "profiles", ["id", "display_name", "timezone", "created_at", "updated_at"], "id"),
   table("notificationTargets", "notification_targets", ["id", "profile_id", "channel_type", "label", "enabled", "created_at", "updated_at"], "id"),
   table("medications", "medications", ["id", "profile_id", "name", "dose", "instructions", "enabled", "created_at", "updated_at"], "id"),
-  table("medicationSchedules", "medication_schedules", ["id", "medication_id", "schedule_type", "timezone", "start_date", "end_date", "version", "materialized_through", "created_at", "updated_at"], "id"),
-  table("medicationTimes", "medication_times", ["id", "schedule_id", "local_time", "sort_order"], "id"),
+  table("medicationSchedules", "medication_schedules", ["id", "medication_id", "schedule_type", "timezone", "start_date", "end_date", "interval_days", "weekdays", "active_days", "rest_days", "version", "materialized_through", "created_at", "updated_at"], "id"),
+  table("medicationTimes", "medication_times", ["id", "schedule_id", "local_time", "dose", "sort_order"], "id"),
   table("injectionPlans", "injection_plans", ["id", "profile_id", "name", "dose", "site", "instructions", "start_date", "end_date", "local_time", "timezone", "interval_days", "first_side", "enabled", "version", "materialized_through", "created_at", "updated_at"], "id"),
   { ...table("injectionRecords", "injection_records", ["id", "plan_id", "scheduled_date", "status", "completed_at", "actual_side", "rescheduled_to", "notes", "created_at", "updated_at"], "id"), optionalForVersions: [1] },
   table("events", "events", ["id", "profile_id", "event_type", "title", "event_at", "timezone", "location", "notes", "enabled", "version", "created_at", "updated_at"], "id"),
@@ -120,7 +120,7 @@ async function readBackupData(database: D1Database): Promise<BackupData> {
 async function validateBackup(database: D1Database, document: BackupDocument) {
   const errors: string[] = [];
   if (document.format !== BACKUP_FORMAT) errors.push("不是健康提醒备份文件");
-  if (![1, 2, BACKUP_VERSION].includes(document.version)) errors.push(`不支持备份版本 ${document.version}`);
+  if (![1, 2, 3, BACKUP_VERSION].includes(document.version)) errors.push(`不支持备份版本 ${document.version}`);
   if (!Number.isFinite(Date.parse(document.exportedAt))) errors.push("导出时间无效");
 
   for (const definition of TABLES) {
@@ -259,7 +259,7 @@ function normalizeDocument(value: unknown): BackupDocument {
   if (!input.data || typeof input.data !== "object" || Array.isArray(input.data)) {
     throw new AppError(400, "INVALID_BACKUP", "备份文件缺少 data");
   }
-  return {
+  const document: BackupDocument = {
     format: String(input.format || ""),
     version: Number(input.version),
     exportedAt: String(input.exportedAt || ""),
@@ -270,6 +270,26 @@ function normalizeDocument(value: unknown): BackupDocument {
     excluded: Array.isArray(input.excluded) ? input.excluded.map(String) : [],
     data: input.data as BackupData,
   };
+  if (document.version <= 3) {
+    const schedules = document.data.medicationSchedules;
+    if (Array.isArray(schedules)) {
+      schedules.forEach((row) => {
+        if (!row || typeof row !== "object" || Array.isArray(row)) return;
+        row.interval_days = 1;
+        row.weekdays = 127;
+        row.active_days = 1;
+        row.rest_days = 0;
+      });
+    }
+    const times = document.data.medicationTimes;
+    if (Array.isArray(times)) {
+      times.forEach((row) => {
+        if (!row || typeof row !== "object" || Array.isArray(row)) return;
+        row.dose = "";
+      });
+    }
+  }
+  return document;
 }
 
 function recordCounts(data: BackupData): Record<string, number> {

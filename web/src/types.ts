@@ -1,3 +1,10 @@
+export type MedicationScheduleType = "daily" | "interval_days" | "weekly" | "cycle";
+
+export interface MedicationSlot {
+  time: string;
+  dose: string;
+}
+
 export interface Medication {
   id: string;
   name: string;
@@ -6,11 +13,16 @@ export interface Medication {
   enabled: boolean;
   schedule: {
     id: string;
-    type: string;
+    type: MedicationScheduleType;
     timezone: string;
     startDate: string;
     endDate: string | null;
+    intervalDays: number;
+    weekdays: number[];
+    activeDays: number;
+    restDays: number;
     times: string[];
+    slots: MedicationSlot[];
     version: number;
     materializedThrough: string | null;
   };
@@ -24,7 +36,12 @@ export interface MedicationInput {
   instructions: string;
   startDate: string;
   endDate: string | null;
-  times: string[];
+  scheduleType: MedicationScheduleType;
+  intervalDays: number;
+  weekdays: number[];
+  activeDays: number;
+  restDays: number;
+  slots: MedicationSlot[];
   enabled: boolean;
 }
 

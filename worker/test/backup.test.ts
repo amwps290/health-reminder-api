@@ -44,7 +44,7 @@ describe("backup export", () => {
     };
     expect(backup).toMatchObject({
       format: "health-reminder-backup",
-      version: 3,
+      version: 4,
       excluded: ["scheduler_runs", "maintenance_state", "worker_secrets"],
     });
     expect(backup.recordCounts.medicationRecords).toBe(0);
@@ -93,6 +93,48 @@ describe("backup export", () => {
     expect(await response.json()).toMatchObject({
       data: { valid: true, version: 2, incoming: { medicationRecords: 0 } },
     });
+  });
+
+  it("upgrades version 3 medication schedules during validation", async () => {
+    const startDate = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+    const created = await request("/api/v1/medications", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "旧版备份计划",
+        dose: "1 片",
+        instructions: "",
+        startDate,
+        endDate: null,
+        times: ["08:00"],
+        enabled: true,
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(created.status).toBe(201);
+    const exported = await request("/api/v1/backup/export");
+    const backup = await exported.json() as {
+      version: number;
+      data: {
+        medicationSchedules: Array<Record<string, unknown>>;
+        medicationTimes: Array<Record<string, unknown>>;
+      };
+    };
+    backup.version = 3;
+    for (const row of backup.data.medicationSchedules) {
+      delete row.interval_days;
+      delete row.weekdays;
+      delete row.active_days;
+      delete row.rest_days;
+    }
+    for (const row of backup.data.medicationTimes) delete row.dose;
+
+    const response = await request("/api/v1/backup/validate", {
+      method: "POST",
+      body: JSON.stringify(backup),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ data: { valid: true, version: 3 } });
   });
 
   it("validates and restores a JSON backup after preview", async () => {

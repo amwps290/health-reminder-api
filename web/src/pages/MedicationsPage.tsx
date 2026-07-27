@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarRange, CheckCircle2, Clock3, History, Pencil, Pill, Plus, Send, SkipForward, Trash2 } from "lucide-react";
+import { CalendarRange, CheckCircle2, Clock3, History, Pencil, Pill, Plus, Repeat2, Send, SkipForward, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { api, jsonBody } from "../api";
 import { Modal } from "../components/Modal";
@@ -33,11 +33,12 @@ export function MedicationsPage() {
         {medications.data?.map((item) => (
           <article className={`item-card ${item.enabled ? "" : "disabled"}`} key={item.id}>
             <div className="item-card-header">
-              <div className="item-title"><span className="item-icon medication"><Pill size={19} /></span><div><h2>{item.name}</h2><p>{item.dose || "未填写剂量"}</p></div></div>
+              <div className="item-title"><span className="item-icon medication"><Pill size={19} /></span><div><h2>{item.name}</h2><p>{formatMedicationDose(item)}</p></div></div>
               <span className={item.enabled ? "enabled-label" : "disabled-label"}>{item.enabled ? "启用" : "停用"}</span>
             </div>
             <div className="item-details">
-              <div><Clock3 size={16} /><span>{item.schedule.times.join("、")}</span></div>
+              <div><Clock3 size={16} /><span>{formatMedicationSlots(item)}</span></div>
+              <div><Repeat2 size={16} /><span>{formatMedicationSchedule(item)}</span></div>
               <div><CalendarRange size={16} /><span>{item.schedule.startDate} 至 {item.schedule.endDate || "长期"}</span></div>
             </div>
             {item.instructions && <p className="item-note">{item.instructions}</p>}
@@ -65,9 +66,27 @@ function MedicationModal({ medication, onClose }: { medication: Medication | nul
     instructions: medication.instructions,
     startDate: medication.schedule.startDate,
     endDate: medication.schedule.endDate,
-    times: medication.schedule.times,
+    scheduleType: medication.schedule.type,
+    intervalDays: medication.schedule.intervalDays,
+    weekdays: medication.schedule.weekdays,
+    activeDays: medication.schedule.activeDays,
+    restDays: medication.schedule.restDays,
+    slots: medication.schedule.slots,
     enabled: medication.enabled,
-  } : { name: "", dose: "", instructions: "", startDate: today, endDate: null, times: ["08:00"], enabled: true });
+  } : {
+    name: "",
+    dose: "",
+    instructions: "",
+    startDate: today,
+    endDate: null,
+    scheduleType: "daily",
+    intervalDays: 2,
+    weekdays: [1, 2, 3, 4, 5],
+    activeDays: 21,
+    restDays: 7,
+    slots: [{ time: "08:00", dose: "" }],
+    enabled: true,
+  });
   const mutation = useMutation({
     mutationFn: () => api<Medication>(medication ? `/medications/${medication.id}` : "/medications", {
       method: medication ? "PUT" : "POST",
@@ -92,8 +111,19 @@ function MedicationModal({ medication, onClose }: { medication: Medication | nul
     setFormError(null);
     mutation.mutate();
   }
-  function updateTime(index: number, value: string) {
-    setForm((current) => ({ ...current, times: current.times.map((time, itemIndex) => itemIndex === index ? value : time) }));
+  function updateSlot(index: number, patch: Partial<MedicationInput["slots"][number]>) {
+    setForm((current) => ({
+      ...current,
+      slots: current.slots.map((slot, itemIndex) => itemIndex === index ? { ...slot, ...patch } : slot),
+    }));
+  }
+  function toggleWeekday(weekday: number) {
+    setForm((current) => ({
+      ...current,
+      weekdays: current.weekdays.includes(weekday)
+        ? current.weekdays.filter((item) => item !== weekday)
+        : [...current.weekdays, weekday].sort(),
+    }));
   }
   function test() {
     const error = validateMedicationForm(form);
@@ -114,20 +144,51 @@ function MedicationModal({ medication, onClose }: { medication: Medication | nul
         {testNotification.data && <NotificationTestFeedback result={testNotification.data} />}
         <div className="form-grid two-columns">
           <Field label="名称"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required maxLength={120} /></Field>
-          <Field label="单次剂量"><input value={form.dose} onChange={(e) => setForm({ ...form, dose: e.target.value })} maxLength={120} placeholder="例如：1 片" /></Field>
+          <Field label="默认单次剂量"><input value={form.dose} onChange={(e) => setForm({ ...form, dose: e.target.value })} maxLength={120} placeholder="例如：1 片" /></Field>
         </div>
         <Field label="服用说明"><textarea value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} rows={3} maxLength={1000} /></Field>
         <div className="form-grid two-columns">
           <Field label="开始日期"><input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required /></Field>
           <Field label="结束日期"><input type="date" value={form.endDate || ""} min={form.startDate} onChange={(e) => setForm({ ...form, endDate: e.target.value || null })} /></Field>
         </div>
+        <div className="form-grid two-columns align-end">
+          <Field label="服药周期">
+            <select value={form.scheduleType} onChange={(event) => setForm({ ...form, scheduleType: event.target.value as MedicationInput["scheduleType"] })}>
+              <option value="daily">每天</option>
+              <option value="interval_days">每隔若干天</option>
+              <option value="weekly">每周指定日期</option>
+              <option value="cycle">服药与停药循环</option>
+            </select>
+          </Field>
+          {form.scheduleType === "interval_days" && (
+            <Field label="间隔天数"><input type="number" min={1} max={365} value={form.intervalDays} onChange={(event) => setForm({ ...form, intervalDays: Number(event.target.value) })} required /></Field>
+          )}
+          {form.scheduleType === "cycle" && (
+            <div className="cycle-inputs">
+              <Field label="连续服药（天）"><input type="number" min={1} max={365} value={form.activeDays} onChange={(event) => setForm({ ...form, activeDays: Number(event.target.value) })} required /></Field>
+              <Field label="随后停药（天）"><input type="number" min={1} max={365} value={form.restDays} onChange={(event) => setForm({ ...form, restDays: Number(event.target.value) })} required /></Field>
+            </div>
+          )}
+        </div>
+        {form.scheduleType === "weekly" && (
+          <div className="field-group">
+            <span>每周服用日</span>
+            <div className="weekday-control" role="group" aria-label="每周服用日">
+              {WEEKDAYS.map(({ value, label }) => (
+                <button type="button" key={value} className={form.weekdays.includes(value) ? "active" : ""} aria-pressed={form.weekdays.includes(value)} onClick={() => toggleWeekday(value)}>{label}</button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="field-group">
-          <div className="field-row-heading"><span>每日时间</span><button type="button" className="text-button" onClick={() => setForm({ ...form, times: [...form.times, "12:00"] })}><Plus size={16} />添加</button></div>
-          <div className="time-list">
-            {form.times.map((time, index) => (
-              <div className="time-input-row" key={index}>
-                <TimeDialInput value={time} ariaLabel={`每日时间 ${index + 1}`} onChange={(value) => updateTime(index, value)} />
-                <button type="button" className="icon-button danger" aria-label="删除时间" disabled={form.times.length === 1} onClick={() => setForm({ ...form, times: form.times.filter((_, itemIndex) => itemIndex !== index) })}><Trash2 size={17} /></button>
+          <div className="field-row-heading"><span>服用时间与剂量</span><button type="button" className="text-button" disabled={form.slots.length >= 12} onClick={() => setForm({ ...form, slots: [...form.slots, { time: "12:00", dose: "" }] })}><Plus size={16} />添加</button></div>
+          <div className="medication-slot-heading" aria-hidden="true"><span>时间</span><span>本次剂量（留空使用默认）</span><span /></div>
+          <div className="medication-slot-list">
+            {form.slots.map((slot, index) => (
+              <div className="medication-slot-row" key={index}>
+                <TimeDialInput value={slot.time} ariaLabel={`服用时间 ${index + 1}`} onChange={(value) => updateSlot(index, { time: value })} />
+                <input aria-label={`服用时间 ${index + 1} 的剂量`} value={slot.dose} onChange={(event) => updateSlot(index, { dose: event.target.value })} maxLength={120} placeholder={form.dose || "例如：1 片"} />
+                <button type="button" className="icon-button danger" aria-label={`删除服用时间 ${index + 1}`} disabled={form.slots.length === 1} onClick={() => setForm({ ...form, slots: form.slots.filter((_, itemIndex) => itemIndex !== index) })}><Trash2 size={17} /></button>
               </div>
             ))}
           </div>
@@ -247,10 +308,10 @@ function emptyMedicationRecordForm(medication: Medication): MedicationRecordForm
   const now = toDateTimeInput(new Date().toISOString());
   const today = now.slice(0, 10);
   const currentTime = now.slice(11);
-  const plannedTime = [...medication.schedule.times]
+  const plannedTime = medication.schedule.slots.map((slot) => slot.time)
     .sort()
     .filter((time) => time <= currentTime)
-    .at(-1) || [...medication.schedule.times].sort()[0] || currentTime;
+    .at(-1) || medication.schedule.slots.map((slot) => slot.time).sort()[0] || currentTime;
   return { scheduledAt: `${today}T${plannedTime}`, status: "taken", takenAt: now, notes: "" };
 }
 
@@ -260,10 +321,46 @@ function validateMedicationForm(form: MedicationInput): string | null {
   if (!form.name.trim()) return "请填写服药计划名称";
   if (!form.startDate) return "请选择开始日期";
   if (form.endDate && form.endDate < form.startDate) return "结束日期不能早于开始日期";
-  if (form.times.length === 0) return "至少需要一个每日服用时间";
-  if (form.times.some((time) => !time)) return "请填写完整的每日服用时间";
-  if (new Set(form.times).size !== form.times.length) return "每日服用时间不能重复";
+  if (form.scheduleType === "interval_days" && (!Number.isInteger(form.intervalDays) || form.intervalDays < 1 || form.intervalDays > 365)) return "间隔天数需为 1 到 365 的整数";
+  if (form.scheduleType === "weekly" && form.weekdays.length === 0) return "每周计划至少选择一天";
+  if (form.scheduleType === "cycle" && (!Number.isInteger(form.activeDays) || form.activeDays < 1 || !Number.isInteger(form.restDays) || form.restDays < 1)) return "服药和停药天数都至少为 1 天";
+  if (form.slots.length === 0) return "至少需要一个服用时间";
+  if (form.slots.some((slot) => !slot.time)) return "请填写完整的服用时间";
+  if (new Set(form.slots.map((slot) => slot.time)).size !== form.slots.length) return "服用时间不能重复";
   return null;
+}
+
+const WEEKDAYS = [
+  { value: 1, label: "一" },
+  { value: 2, label: "二" },
+  { value: 3, label: "三" },
+  { value: 4, label: "四" },
+  { value: 5, label: "五" },
+  { value: 6, label: "六" },
+  { value: 0, label: "日" },
+] as const;
+
+function formatMedicationSchedule(medication: Medication): string {
+  const schedule = medication.schedule;
+  if (schedule.type === "interval_days") return schedule.intervalDays === 1 ? "每天" : `每隔 ${schedule.intervalDays} 天`;
+  if (schedule.type === "weekly") {
+    const labels = WEEKDAYS.filter((item) => schedule.weekdays.includes(item.value)).map((item) => item.label);
+    return `每周${labels.join("、")}`;
+  }
+  if (schedule.type === "cycle") return `服 ${schedule.activeDays} 天，停 ${schedule.restDays} 天`;
+  return "每天";
+}
+
+function formatMedicationSlots(medication: Medication): string {
+  return medication.schedule.slots
+    .map((slot) => `${slot.time}${slot.dose && slot.dose !== medication.dose ? ` ${slot.dose}` : ""}`)
+    .join("、");
+}
+
+function formatMedicationDose(medication: Medication): string {
+  if (medication.dose) return medication.dose;
+  const doses = [...new Set(medication.schedule.slots.map((slot) => slot.dose).filter(Boolean))];
+  return doses.length ? doses.join(" / ") : "未填写剂量";
 }
 
 function refresh(queryClient: ReturnType<typeof useQueryClient>) {

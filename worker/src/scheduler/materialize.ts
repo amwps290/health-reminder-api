@@ -17,15 +17,21 @@ interface MedicationScheduleRow {
   name: string;
   dose: string;
   instructions: string;
+  schedule_type: "daily" | "interval_days" | "weekly" | "cycle";
   timezone: string;
   start_date: string;
   end_date: string | null;
+  interval_days: number;
+  weekdays: number;
+  active_days: number;
+  rest_days: number;
   version: number;
   materialized_through: string | null;
 }
 
 interface MedicationTimeRow {
   local_time: string;
+  dose: string;
 }
 
 interface EventRow {
@@ -114,7 +120,9 @@ export async function topUpMedicationJobs(
   const { results } = await database
     .prepare(
       `SELECT s.id AS schedule_id, s.medication_id, m.name, m.dose, m.instructions,
-              s.timezone, s.start_date, s.end_date, s.version, s.materialized_through
+              s.schedule_type, s.timezone, s.start_date, s.end_date,
+              s.interval_days, s.weekdays, s.active_days, s.rest_days,
+              s.version, s.materialized_through
        FROM medication_schedules s
        JOIN medications m ON m.id = s.medication_id
        WHERE m.enabled = 1`,
@@ -231,16 +239,17 @@ async function materializeMedicationSchedule(
   }
 
   const { results: times } = await database
-    .prepare("SELECT local_time FROM medication_times WHERE schedule_id = ? ORDER BY sort_order, local_time")
+    .prepare("SELECT local_time, dose FROM medication_times WHERE schedule_id = ? ORDER BY sort_order, local_time")
     .bind(schedule.schedule_id)
     .all<MedicationTimeRow>();
 
   const jobs: JobDraft[] = [];
   for (const date of eachLocalDate(from, through)) {
+    if (!isMedicationDate(schedule, date)) continue;
     for (const time of times) {
       const scheduledAt = localDateTimeToInstant(date, time.local_time, schedule.timezone);
       if (scheduledAt.getTime() >= now.getTime()) {
-        jobs.push(createMedicationJob(schedule, scheduledAt));
+        jobs.push(createMedicationJob(schedule, time, scheduledAt));
       }
     }
   }
@@ -342,7 +351,9 @@ async function getMedicationSchedule(
   return database
     .prepare(
       `SELECT s.id AS schedule_id, s.medication_id, m.name, m.dose, m.instructions,
-              s.timezone, s.start_date, s.end_date, s.version, s.materialized_through
+              s.schedule_type, s.timezone, s.start_date, s.end_date,
+              s.interval_days, s.weekdays, s.active_days, s.rest_days,
+              s.version, s.materialized_through
        FROM medication_schedules s
        JOIN medications m ON m.id = s.medication_id
        WHERE m.id = ? AND m.enabled = 1`,
@@ -351,9 +362,16 @@ async function getMedicationSchedule(
     .first<MedicationScheduleRow>();
 }
 
-function createMedicationJob(schedule: MedicationScheduleRow, scheduledAt: Date): JobDraft {
+function createMedicationJob(
+  schedule: MedicationScheduleRow,
+  time: MedicationTimeRow,
+  scheduledAt: Date,
+): JobDraft {
   const iso = scheduledAt.toISOString();
-  const message = medicationMessage(schedule);
+  const message = medicationMessage({
+    ...schedule,
+    dose: time.dose || schedule.dose,
+  });
   return {
     id: crypto.randomUUID(),
     sourceType: "medication",
@@ -365,6 +383,22 @@ function createMedicationJob(schedule: MedicationScheduleRow, scheduledAt: Date)
     body: message.body,
     groupName: message.group,
   };
+}
+
+function isMedicationDate(schedule: MedicationScheduleRow, date: string): boolean {
+  const elapsedDays = differenceInLocalDays(schedule.start_date, date);
+  if (elapsedDays < 0) return false;
+  if (schedule.schedule_type === "interval_days") {
+    return elapsedDays % schedule.interval_days === 0;
+  }
+  if (schedule.schedule_type === "weekly") {
+    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+    return (schedule.weekdays & (1 << weekday)) !== 0;
+  }
+  if (schedule.schedule_type === "cycle") {
+    return elapsedDays % (schedule.active_days + schedule.rest_days) < schedule.active_days;
+  }
+  return true;
 }
 
 function createEventJob(event: EventRow, remindAt: string): JobDraft {
