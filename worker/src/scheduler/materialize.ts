@@ -193,7 +193,25 @@ export async function regenerateInjectionJobs(
   ]);
 
   plan.materialized_through = null;
-  return plan.enabled === 1 ? materializeInjectionPlan(database, plan, now, config) : 0;
+  if (plan.enabled !== 1) return 0;
+
+  try {
+    return await materializeInjectionPlan(database, plan, now, config);
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "injection_regenerate_failed",
+      injectionId,
+      errorCode: error instanceof Error ? error.name : "UNKNOWN_ERROR",
+      errorMessage: error instanceof Error ? error.message : "",
+    }));
+    // Set materialized_through to today so the next topUp can recover
+    const today = dateInTimeZone(now, plan.timezone);
+    await database
+      .prepare("UPDATE injection_plans SET materialized_through = ?, updated_at = ? WHERE id = ?")
+      .bind(today, now.toISOString(), plan.id)
+      .run();
+    throw error;
+  }
 }
 
 export async function topUpInjectionJobs(
@@ -248,9 +266,7 @@ async function materializeMedicationSchedule(
     if (!isMedicationDate(schedule, date)) continue;
     for (const time of times) {
       const scheduledAt = localDateTimeToInstant(date, time.local_time, schedule.timezone);
-      if (scheduledAt.getTime() >= now.getTime()) {
-        jobs.push(createMedicationJob(schedule, time, scheduledAt));
-      }
+      jobs.push(createMedicationJob(schedule, time, scheduledAt));
     }
   }
 
@@ -320,9 +336,7 @@ async function materializeInjectionPlan(
   const jobs: JobDraft[] = [];
   for (const occurrence of occurrences) {
     const scheduledAt = localDateTimeToInstant(occurrence.effectiveDate, plan.local_time, plan.timezone);
-    if (scheduledAt.getTime() >= now.getTime()) {
-      jobs.push(createInjectionJob(plan, scheduledAt, nextSide));
-    }
+    jobs.push(createInjectionJob(plan, scheduledAt, nextSide));
   }
 
   const inserted = await insertJobs(database, jobs, now);
