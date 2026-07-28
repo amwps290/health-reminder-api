@@ -334,9 +334,12 @@ async function materializeInjectionPlan(
   occurrences.sort((left, right) => compareDates(left.effectiveDate, right.effectiveDate));
 
   const jobs: JobDraft[] = [];
-  for (const occurrence of occurrences) {
+  for (const [index, occurrence] of occurrences.entries()) {
     const scheduledAt = localDateTimeToInstant(occurrence.effectiveDate, plan.local_time, plan.timezone);
-    jobs.push(createInjectionJob(plan, scheduledAt, nextSide));
+    // Sides alternate across upcoming occurrences once a real completion anchors
+    // the sequence; skipped dates are excluded so they do not consume a side.
+    const side = lastCompleted && index % 2 === 1 ? oppositeSide(nextSide) : nextSide;
+    jobs.push(createInjectionJob(plan, scheduledAt, side));
   }
 
   const inserted = await insertJobs(database, jobs, now);
@@ -429,6 +432,10 @@ function createEventJob(event: EventRow, remindAt: string): JobDraft {
     body: message.body,
     groupName: message.group,
   };
+}
+
+function oppositeSide(side: "left" | "right"): "left" | "right" {
+  return side === "left" ? "right" : "left";
 }
 
 function createInjectionJob(
