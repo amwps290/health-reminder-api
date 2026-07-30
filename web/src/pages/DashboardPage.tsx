@@ -52,6 +52,7 @@ export function DashboardPage() {
       ]);
     },
   });
+  const visibleJobs = (timeline.data ?? []).filter((job) => job.status !== "canceled");
   const adherenceSummary = summarizeMedicationAdherence(timeline.data);
 
   return (
@@ -88,7 +89,7 @@ export function DashboardPage() {
         <div className="section-heading timeline-heading">
           <h2>今日提醒</h2>
           <div className="timeline-heading-meta">
-            <span>{timeline.data?.length ?? 0} 项</span>
+            <span>{visibleJobs.length} 项</span>
             {adherenceSummary.total > 0 && (
               <div className="adherence-summary" aria-label="今日服药执行汇总">
                 <span className="taken">已服 <strong>{adherenceSummary.taken}</strong></span>
@@ -101,9 +102,9 @@ export function DashboardPage() {
         </div>
         {timeline.isPending && <LoadingView />}
         {timeline.isError && <ErrorNotice message={timeline.error.message} />}
-        {timeline.data?.length === 0 && <EmptyState title="今天没有提醒" />}
+        {!timeline.isPending && !timeline.isError && visibleJobs.length === 0 && <EmptyState title="今天没有提醒" />}
         <div className="task-list">
-          {timeline.data?.map((job) => (
+          {visibleJobs.map((job) => (
             <article className={`task-row ${job.adherence_state ? "has-record-actions" : ""}`} key={job.id}>
               <div className={`task-icon ${job.source_type}`}>
                 {job.source_type === "medication" ? <BellRing size={19} /> : job.source_type === "injection" ? <Syringe size={19} /> : <Clock3 size={19} />}
